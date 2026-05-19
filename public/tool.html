@@ -24338,7 +24338,8 @@ function handleHelloDataFile(file){
       res.comps.forEach(c=>c.rows.forEach(r=>{
         if(r.grossDirect!=null&&r.nerDirect!=null&&r.grossDirect-r.nerDirect>1) concCount++;
       }));
-      rpt.innerHTML=`<div class="hint"><b>HelloData imported.</b> Added <b>${res.count}</b>
+      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-hellodata',{method:'POST',body:fd}).catch(()=>{});}
+            rpt.innerHTML=`<div class="hint"><b>HelloData imported.</b> Added <b>${res.count}</b>
         comp communities (30-day window) from the "${res.sheetName}" sheet.
         ${res.sfEnriched>0?'Square footage and PSF mapped for <b>'+res.sfEnriched+'</b> comp(s) from the Unit-Level Data sheet.':'<span style="color:var(--warn)">Square footage could not be mapped — the Unit-Level Data sheet was missing or empty.</span>'}
         ${concCount>0?concCount+' bedroom-type(s) show active concessions.':'No active concessions detected.'}
@@ -26312,6 +26313,7 @@ document.getElementById('resetAll').addEventListener('click',()=>{
 </script>
 </body>
 </html>
+
 
 
 

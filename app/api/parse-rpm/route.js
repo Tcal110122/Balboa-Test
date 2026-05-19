@@ -1,0 +1,34 @@
+import { NextResponse } from 'next/server'
+import { parseRPMMarket } from '@/lib/rpm-parser'
+import supabase from '@/lib/supabase'
+
+export async function POST(request) {
+  try {
+    const formData = await request.formData()
+    const file = formData.get('file')
+    const dealId = formData.get('deal_id')
+
+    if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    if (!dealId) return NextResponse.json({ error: 'No deal_id provided' }, { status: 400 })
+
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const parsed = parseRPMMarket(buffer)
+
+    if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    if (!parsed.comps.length) return NextResponse.json({ error: 'No comp properties found in file.' }, { status: 400 })
+
+    const { error } = await supabase
+      .from('comp_snapshots')
+      .insert({ deal_id: dealId, comps: parsed.comps, count: parsed.count })
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    return NextResponse.json({
+      success: true,
+      count: parsed.count,
+      sfEnriched: 0
+    })
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}

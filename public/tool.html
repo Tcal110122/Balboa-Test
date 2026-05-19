@@ -298,11 +298,11 @@
     <div class="hint">
       <b>Your independent comp set:</b> the check on whether Greystar's "Market" rent is actually
       market. Add communities manually (asking rent + weeks-free, tool computes net effective), or
-      import a <b>HelloData export</b> — those rents come in as HelloData reports them, tagged by source.
+      import a <b>market data file</b> (HelloData or RPM Living format) — rents come in tagged by source.
     </div>
     <div class="toolbar">
       <button class="btn ghost" id="addComp">+ Add Competitor Community</button>
-      <button class="btn ghost" id="importHelloData">Import HelloData Export (.xlsx)</button>
+      <button class="btn ghost" id="importHelloData">Import Market Data (.xlsx)</button>
       <input type="file" id="hdFileInput" accept=".xlsx,.xls" style="display:none">
       <div class="grow"></div>
       <span class="note muted">A tight 3&ndash;6 property comp set beats a long noisy one.</span>
@@ -24326,32 +24326,82 @@ function parseHelloData(wb, windowChoice){
     sfEnriched: unitLevel ? comps.filter(c=>c.sfMatched).length : 0};
 }
 
-function handleHelloDataFile(file){
+function parseRPMMarket(wb){
+  const sheetName=wb.SheetNames.find(n=>/property summary/i.test(n));
+  if(!sheetName) return {error:'No "Property Summary" sheet found'};
+  const ws=wb.Sheets[sheetName];
+  const grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
+  const dataRows=grid.slice(3).filter(r=>{
+    const name=String((r||[])[0]||'').trim();
+    return name&&!/^average$/i.test(name);
+  });
+  const subjectName=String((dataRows[0]||[])[0]||'').trim();
+  const distances={};
+  const ms=wb.Sheets['Market Survey'];
+  if(ms){
+    const mg=XLSX.utils.sheet_to_json(ms,{header:1,raw:true});
+    const propRow=mg[2]||[];
+    const distRow=mg.find(r=>/^distance$/i.test(String((r||[])[0]||'').trim()))||[];
+    propRow.forEach((v,ci)=>{if(ci>0){const n=String(v||'').trim();if(n)distances[n]=num(distRow[ci]);}});
+  }
+  const RPM_BEDS=[
+    {label:'Studio / Small',ask:[7,24,41],eff:[13,30,47]},
+    {label:'1 Bed',ask:[8,25,42],eff:[14,31,48]},
+    {label:'2 Bed',ask:[9,26,43],eff:[15,32,49]},
+    {label:'3 Bed',ask:[10,27,44],eff:[16,33,50]}
+  ];
+  const WINS=['30','60','90'];
+  const comps=[];
+  dataRows.forEach(row=>{
+    const name=String(row[0]||'').trim();
+    if(!name||name===subjectName) return;
+    const rows=RPM_BEDS.map(b=>{
+      const W={};
+      WINS.forEach((w,i)=>{W[w]={gross:num(row[b.ask[i]]),ner:num(row[b.eff[i]])};});
+      if(!WINS.some(w=>W[w].gross!=null||W[w].ner!=null)) return null;
+      return {bed:b.label,sf:'',source:'hellodata',grossDirect:W['30'].gross,nerDirect:W['30'].ner,windows:W,asking:'',weeksFree:'',leaseMonths:12};
+    }).filter(Boolean);
+    if(!rows.length) return;
+    const distMi=distances[name]??null;
+    const totalUnits=num(row[3]);
+    comps.push({id:uid(),name,
+      distance:distMi!=null?distMi.toFixed(2)+' mi':'',
+      units:totalUnits!=null?String(Math.round(totalUnits)):'',
+      source:'hellodata',hdWindow:'30-day',rows,sfMatched:false,
+      perf:{leasedPct:num(row[5]),exposure:num(row[6]),priceFreq:null,yearBuilt:num(row[2]),quality:null,distanceMi:distMi,totalUnits}
+    });
+  });
+  return {comps,count:comps.length};
+}
+
+function handleMarketFile(file){
   const reader=new FileReader();
   reader.onload=e=>{
     const rpt=document.getElementById('hdImportReport');
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
-      const res=parseHelloData(wb,'30');
-      if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
-      if(!res.count){ rpt.innerHTML='<div class="hint warn"><b>No comps found</b> in the HelloData export.</div>'; return; }
-      // merge: replace existing hellodata comps, keep manual ones
-      const manual=state.comps.filter(c=>c.source!=='hellodata');
-      state.comps=manual.concat(res.comps);
-      save();
-      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rentroll',{method:'POST',body:fd}).catch(()=>{});} renderComps(); renderDashboard();
-      // count concessions detected
-      let concCount=0;
-      res.comps.forEach(c=>c.rows.forEach(r=>{
-        if(r.grossDirect!=null&&r.nerDirect!=null&&r.grossDirect-r.nerDirect>1) concCount++;
-      }));
-      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-hellodata',{method:'POST',body:fd}).catch(()=>{});}
-            rpt.innerHTML=`<div class="hint"><b>HelloData imported.</b> Added <b>${res.count}</b>
-        comp communities (30-day window) from the "${res.sheetName}" sheet.
-        ${res.sfEnriched>0?'Square footage and PSF mapped for <b>'+res.sfEnriched+'</b> comp(s) from the Unit-Level Data sheet.':'<span style="color:var(--warn)">Square footage could not be mapped — the Unit-Level Data sheet was missing or empty.</span>'}
-        ${concCount>0?concCount+' bedroom-type(s) show active concessions.':'No active concessions detected.'}
-        ${manual.length>0?'Your '+manual.length+' manually-entered comp(s) were kept.':''}
-        Rents are shown as HelloData reports them — see the source tags below.</div>`;
+      const isRPM=wb.SheetNames.some(n=>/property summary/i.test(n));
+      if(isRPM){
+        const res=parseRPMMarket(wb);
+        if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
+        if(!res.count){ rpt.innerHTML='<div class="hint warn"><b>No comps found</b> in the RPM market survey.</div>'; return; }
+        const manual=state.comps.filter(c=>c.source!=='hellodata');
+        state.comps=manual.concat(res.comps);
+        save(); renderComps(); renderDashboard();
+        if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rpm',{method:'POST',body:fd}).catch(()=>{});}
+        rpt.innerHTML=`<div class="hint"><b>RPM market survey imported.</b> Added <b>${res.count}</b> comp communities with 30/60/90-day windows.${manual.length>0?' Your '+manual.length+' manually-entered comp(s) were kept.':''}</div>`;
+      } else {
+        const res=parseHelloData(wb,'30');
+        if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
+        if(!res.count){ rpt.innerHTML='<div class="hint warn"><b>No comps found</b> in the market data file.</div>'; return; }
+        const manual=state.comps.filter(c=>c.source!=='hellodata');
+        state.comps=manual.concat(res.comps);
+        save(); renderComps(); renderDashboard();
+        let concCount=0;
+        res.comps.forEach(c=>c.rows.forEach(r=>{if(r.grossDirect!=null&&r.nerDirect!=null&&r.grossDirect-r.nerDirect>1) concCount++;}));
+        if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-hellodata',{method:'POST',body:fd}).catch(()=>{});}
+        rpt.innerHTML=`<div class="hint"><b>HelloData imported.</b> Added <b>${res.count}</b> comp communities (30-day window) from the "${res.sheetName}" sheet. ${res.sfEnriched>0?'Square footage and PSF mapped for <b>'+res.sfEnriched+'</b> comp(s) from the Unit-Level Data sheet.':'<span style="color:var(--warn)">Square footage could not be mapped — the Unit-Level Data sheet was missing or empty.</span>'} ${concCount>0?concCount+' bedroom-type(s) show active concessions.':'No active concessions detected.'} ${manual.length>0?'Your '+manual.length+' manually-entered comp(s) were kept.':''} Rents are shown as HelloData reports them — see the source tags below.</div>`;
+      }
     }catch(err){
       rpt.innerHTML='<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>';
     }
@@ -24369,7 +24419,7 @@ function handleT12File(file){
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.t12=res;
       save();
-      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rentroll',{method:'POST',body:fd}).catch(()=>{});} renderIncome();
+      renderIncome();
       const noi=res.noi?money(res.noi.total):'—';
       if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-t12',{method:'POST',body:fd}).catch(()=>{});}
             rpt.innerHTML=`<div class="hint"><b>T-12 loaded.</b> Period ${res.period||'—'} ·
@@ -24391,7 +24441,7 @@ function handleBudgetFile(file){
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.budget=res;
       save();
-      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rentroll',{method:'POST',body:fd}).catch(()=>{});} renderIncome();
+      renderIncome();
       const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
       if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-budget',{method:'POST',body:fd}).catch(()=>{});}
             rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab ·
@@ -26236,7 +26286,7 @@ document.getElementById('addComp').addEventListener('click',()=>{
 });
 const hdFi=document.getElementById('hdFileInput');
 document.getElementById('importHelloData').addEventListener('click',()=>hdFi.click());
-hdFi.addEventListener('change',e=>{if(e.target.files[0])handleHelloDataFile(e.target.files[0]);});
+hdFi.addEventListener('change',e=>{if(e.target.files[0])handleMarketFile(e.target.files[0]);});
 const t12dz=document.getElementById('t12Drop'), t12fi=document.getElementById('t12FileInput');
 t12dz.addEventListener('click',()=>t12fi.click());
 t12fi.addEventListener('change',e=>{if(e.target.files[0])handleT12File(e.target.files[0]);});

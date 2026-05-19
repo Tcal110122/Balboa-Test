@@ -24363,7 +24363,8 @@ function handleT12File(file){
       save();
       if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rentroll',{method:'POST',body:fd}).catch(()=>{});} renderIncome();
       const noi=res.noi?money(res.noi.total):'—';
-      rpt.innerHTML=`<div class="hint"><b>T-12 loaded.</b> Period ${res.period||'—'} ·
+      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-t12',{method:'POST',body:fd}).catch(()=>{});}
+            rpt.innerHTML=`<div class="hint"><b>T-12 loaded.</b> Period ${res.period||'—'} ·
         ${res.months.length} months · NOI <b>${noi}</b>.</div>`;
     }catch(err){
       rpt.innerHTML='<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>';
@@ -24384,7 +24385,8 @@ function handleBudgetFile(file){
       save();
       if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rentroll',{method:'POST',body:fd}).catch(()=>{});} renderIncome();
       const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
-      rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab ·
+      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-budget',{method:'POST',body:fd}).catch(()=>{});}
+            rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab ·
         latest closed month: <b>${cm} 2026</b>. Current-month and YTD comparisons are below.</div>`;
     }catch(err){
       rpt.innerHTML='<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>';
@@ -26310,5 +26312,6 @@ document.getElementById('resetAll').addEventListener('click',()=>{
 </script>
 </body>
 </html>
+
 
 

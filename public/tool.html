@@ -25354,7 +25354,7 @@ function renderIncome(){
     let opexYtdA=0,opexYtdB=0;
     t.categories.forEach(c=>{
       const cd=sc3&&sc3.catByMonth?sc3.catByMonth[c.acct]:null;
-      const bl=b.catLines[c.acct];
+      const bl=b.catLines?b.catLines[c.acct]:null;
       // YTD actual = sum of merged category actuals over the window
       let ca=0,caAny=false;
       ytdWin.forEach(m=>{
@@ -25373,7 +25373,7 @@ function renderIncome(){
     const vpT=varPair(opexYtdA,opexYtdB,true);
     html+=`<tr class="total-row"><td class="l">Total Operating Expenses</td>
       <td>${money(opexYtdA)}</td><td>${money(opexYtdB)}</td>${vpT.v}${vpT.p}
-      <td>${money(b.headline.totalOpEx?b.headline.totalOpEx.fyBudget:null)}</td></tr>`;
+      <td>${money(b.headline&&b.headline.totalOpEx?b.headline.totalOpEx.fyBudget:null)}</td></tr>`;
     html+=`</tbody></table></div></div>`;
   }
 

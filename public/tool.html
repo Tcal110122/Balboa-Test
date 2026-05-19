@@ -23501,16 +23501,23 @@ function save(){
   catch(e){ console.error('save failed',e); }
 }
 async function load(){
+  let apiOk = false;
   try{
-    const res = await fetch('/api/rentroll');
-    if(res.ok){
-      const snap = await res.json();
+    const [rrRes, t12Res, budRes, compRes] = await Promise.all([
+      fetch('/api/rentroll'), fetch('/api/t12'),
+      fetch('/api/budget'),   fetch('/api/comps')
+    ]);
+    if(rrRes.ok){
+      const snap = await rrRes.json();
       if(snap.units && snap.units.length){
-        state = Object.assign(state, {units:snap.units, rrDate:snap.as_of_date});
-        DEAL_ID = snap.deal_id;
-        return;
+        state.units = snap.units; state.rrDate = snap.as_of_date;
+        DEAL_ID = snap.deal_id; apiOk = true;
       }
     }
+    if(t12Res.ok){ const d = await t12Res.json(); if(d.data) state.t12 = d.data; }
+    if(budRes.ok){ const d = await budRes.json(); if(d.data) state.budget = d.data; }
+    if(compRes.ok){ const d = await compRes.json(); if(d.comps&&d.comps.length) state.comps = d.comps; }
+    if(apiOk) return;
   }catch(e){}
   try{
     const saved = localStorage.getItem('darby_oversight_v2');
@@ -26313,6 +26320,7 @@ document.getElementById('resetAll').addEventListener('click',()=>{
 </script>
 </body>
 </html>
+
 
 
 

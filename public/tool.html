@@ -24487,21 +24487,65 @@ function handleT12File(file){
   reader.readAsArrayBuffer(file);
 }
 
+function parseRPMBudget(wb){
+  const sheetName=wb.SheetNames.find(n=>/modeldetailview/i.test(n));
+  if(!sheetName) return {error:'No "ModelDetailView" sheet found'};
+  const ws=wb.Sheets[sheetName];
+  const grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
+  const hdrIdx=grid.findIndex(r=>String((r||[])[0]||'').trim()==='Account Description');
+  if(hdrIdx<0) return {error:'Could not find column headers in ModelDetailView'};
+  const monthKeys=grid[hdrIdx].slice(1,13).map(l=>String(l||'').slice(0,3).toLowerCase());
+  function rowToMonths(row){const o={};monthKeys.forEach((m,i)=>{o[m]=num(row[i+1]);});return o;}
+  function nullMonths(){const o={};monthKeys.forEach(m=>{o[m]=null;});return o;}
+  const sections={};
+  for(const row of grid.slice(hdrIdx+1)){
+    const label=String((row||[])[0]||'').trim();
+    if(!label||label==='Comments') continue;
+    if(!monthKeys.some((_,i)=>num(row[i+1])!=null)) continue;
+    sections[label]=rowToMonths(row);
+  }
+  function sec(re){const k=Object.keys(sections).find(k=>re.test(k));return k?sections[k]:null;}
+  const incomeMonths=sec(/^total revenue/i);
+  const opexMonths=sec(/^total expense/i);
+  const noiMonths=sec(/^total net operating income/i);
+  if(!incomeMonths||!opexMonths||!noiMonths) return {error:'Could not locate Total Revenue, Total Expense, or NOI'};
+  const gaM=sec(/^general & administrative$/i), mktM=sec(/^marketing$/i);
+  const gaMerged={};
+  monthKeys.forEach(m=>{gaMerged[m]=((gaM&&gaM[m])||0)+((mktM&&mktM[m])||0);});
+  const catByMonth={
+    '51599-099':{budget:sec(/^payroll$/i)||nullMonths(),actual:nullMonths()},
+    '53999-099':{budget:sec(/^repairs & maintenance$/i)||nullMonths(),actual:nullMonths()},
+    '58399-099':{budget:gaMerged,actual:nullMonths()},
+    '57399-099':{budget:sec(/^utilities$/i)||nullMonths(),actual:nullMonths()},
+    '60399-099':{budget:sec(/^management fees$/i)||nullMonths(),actual:nullMonths()},
+    '55999-099':{budget:sec(/^taxes$/i)||nullMonths(),actual:nullMonths()},
+    '56399-199':{budget:sec(/^insurance$/i)||nullMonths(),actual:nullMonths()},
+  };
+  return {sheetName,source:'rpm',monthOrder:monthKeys,currentMonth:null,headline:null,catLines:null,
+    scorecard:{income:{budget:incomeMonths,actual:nullMonths()},opex:{budget:opexMonths,actual:nullMonths()},
+      noi:{budget:noiMonths,actual:nullMonths()},noiAR:{budget:noiMonths,actual:nullMonths()},catByMonth}};
+}
+
 function handleBudgetFile(file){
   const reader=new FileReader();
   reader.onload=e=>{
     const rpt=document.getElementById('budgetReport');
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
-      const res=parseBudget(wb);
+      const isRPM=wb.SheetNames.some(n=>/modeldetailview/i.test(n));
+      const res=isRPM?parseRPMBudget(wb):parseBudget(wb);
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.budget=res;
       save();
       renderIncome();
-      const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
-      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-budget',{method:'POST',body:fd}).catch(()=>{});}
-            rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab ·
-        latest closed month: <b>${cm} 2026</b>. Current-month and YTD comparisons are below.</div>`;
+      const endpoint=isRPM?'/api/parse-rpm-budget':'/api/parse-budget';
+      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch(endpoint,{method:'POST',body:fd}).catch(()=>{});}
+      if(isRPM){
+        rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · 12-month budget for 2026. Month-by-month scorecard is in the Income tab.</div>`;
+      } else {
+        const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
+        rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · latest closed month: <b>${cm} 2026</b>. Current-month and YTD comparisons are below.</div>`;
+      }
     }catch(err){
       rpt.innerHTML='<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>';
     }

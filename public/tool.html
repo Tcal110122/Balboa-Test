@@ -24937,13 +24937,14 @@ function renderRanking(){
       });
     });
   });
-  // Darby — ranked on Yardi market rent, in-place shown alongside
+  // Subject property — ranked on Yardi market rent, in-place shown alongside
+  const subjectDealName=(DEALS.find(d=>d.id===DEAL_ID)||{}).name||'Subject';
   if(darby){
     COMP_BEDS.forEach(b=>{
       const d=darby[b];
       if(d&&d.market!=null){
         byBed[b].push({
-          name:'Darby at Briarcliff', isDarby:true,
+          name:subjectDealName, isDarby:true,
           gross:d.market, ner:d.market, sf:d.sf,
           grossPsf:d.marketPsf, nerPsf:d.marketPsf,
           inplace:d.inplace, inplacePsf:d.inplacePsf

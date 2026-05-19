@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Asset Oversight — Darby at Briarcliff — Balboa REP</title>
+<title>Asset Oversight — Balboa REP</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
@@ -19,6 +19,7 @@
     color:var(--ink);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:1320px;margin:0 auto;padding:0 28px 80px;}
   header{border-bottom:1px solid var(--line);background:var(--card);}
+  .deal-switcher{font-size:12px;font-weight:600;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:4px;padding:2px 6px;cursor:pointer;}
   .hdr-inner{max-width:1320px;margin:0 auto;padding:20px 28px 18px;
     display:flex;align-items:flex-end;justify-content:space-between;gap:24px;}
   .brand-eyebrow{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
@@ -200,8 +201,11 @@
   <div class="hdr-inner">
     <div>
       <div class="brand-eyebrow">Balboa Real Estate Partners &middot; Asset Oversight</div>
-      <h1>Darby at Briarcliff</h1>
-      <div class="sub">1600 NW 38th St, Kansas City, MO 64116 &middot; Greystar-managed &middot; owner-side rent &amp; occupancy review</div>
+      <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <h1 id="dealName">Loading&hellip;</h1>
+        <select id="dealSwitcher" class="deal-switcher" style="display:none"></select>
+      </div>
+      <div class="sub" id="dealSub">&nbsp;</div>
     </div>
     <div class="hdr-meta">
       <div>Rent roll as-of: <b id="rrDate">— not loaded —</b></div>
@@ -311,7 +315,7 @@
 
     <div class="card" id="rankCard" style="display:none">
       <div class="card-hd">
-        <h2>Rent Ranking — Darby vs. Comp Set</h2>
+        <h2>Rent Ranking — <span id="rankDealName">Subject</span> vs. Comp Set</h2>
         <div style="display:flex;gap:10px;align-items:center">
           <label class="fld" style="flex-direction:row;align-items:center;gap:6px">
             <span style="text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink-faint)">Window</span>
@@ -697,6 +701,7 @@ function fpIsFuzzy(code){ return !!(FLOORPLAN_MAP[code]&&FLOORPLAN_MAP[code].fuz
 
 /* ============ State ============ */
 let DEAL_ID = null;
+let DEALS = [];
 let state = {
   rrDate:'', units:[], comps:[], snapshots:[], renewedOverride:[], t12:null, budget:null
 };
@@ -23500,30 +23505,81 @@ function save(){
   try{ localStorage.setItem('darby_oversight_v2', JSON.stringify(state)); }
   catch(e){ console.error('save failed',e); }
 }
-async function load(){
-  let apiOk = false;
+async function loadDealData(dealId){
   try{
     const [rrRes, t12Res, budRes, compRes] = await Promise.all([
-      fetch('/api/rentroll'), fetch('/api/t12'),
-      fetch('/api/budget'),   fetch('/api/comps')
+      fetch('/api/rentroll?deal_id='+dealId), fetch('/api/t12?deal_id='+dealId),
+      fetch('/api/budget?deal_id='+dealId),   fetch('/api/comps?deal_id='+dealId)
     ]);
-    if(rrRes.ok){
-      const snap = await rrRes.json();
-      if(snap.units && snap.units.length){
-        state.units = snap.units; state.rrDate = snap.as_of_date;
-        DEAL_ID = snap.deal_id; apiOk = true;
-      }
-    }
-    if(t12Res.ok){ const d = await t12Res.json(); if(d.data) state.t12 = d.data; }
-    if(budRes.ok){ const d = await budRes.json(); if(d.data) state.budget = d.data; }
-    if(compRes.ok){ const d = await compRes.json(); if(d.comps&&d.comps.length) state.comps = d.comps; }
-    if(apiOk) return;
-  }catch(e){}
+    let apiOk = false;
+    if(rrRes.ok){ const snap=await rrRes.json(); if(snap.units&&snap.units.length){ state.units=snap.units; state.rrDate=snap.as_of_date; apiOk=true; } }
+    if(t12Res.ok){ const d=await t12Res.json(); if(d.data) state.t12=d.data; }
+    if(budRes.ok){ const d=await budRes.json(); if(d.data) state.budget=d.data; }
+    if(compRes.ok){ const d=await compRes.json(); if(d.comps&&d.comps.length) state.comps=d.comps; }
+    return apiOk;
+  }catch(e){ return false; }
+}
+
+function updateDealHeader(){
+  const deal = DEALS.find(d=>d.id===DEAL_ID)||null;
+  const nameEl=document.getElementById('dealName');
+  const subEl=document.getElementById('dealSub');
+  const shortName=deal?(deal.name.split(' ').slice(0,3).join(' ')):null;
+  if(deal){
+    nameEl.textContent=deal.name;
+    subEl.textContent=(deal.address||'')+(deal.unit_count?' · '+deal.unit_count+' units':'');
+    document.title=deal.name+' — Balboa REP';
+  } else {
+    nameEl.textContent='— No property selected —';
+    subEl.textContent='';
+  }
+  const rdn=document.getElementById('rankDealName');
+  if(rdn) rdn.textContent=shortName||'Subject';
+}
+
+function populateDealSwitcher(){
+  const sel=document.getElementById('dealSwitcher');
+  sel.innerHTML=DEALS.map(d=>`<option value="${d.id}"${d.id===DEAL_ID?' selected':''}>${d.name}</option>`).join('');
+  sel.style.display=DEALS.length>1?'':'none';
+  updateDealHeader();
+}
+
+async function switchDeal(deal){
+  DEAL_ID=deal.id;
+  localStorage.setItem('balboa_current_deal',deal.id);
+  state.units=[]; state.rrDate=''; state.snapshots=[];
+  state.t12=null; state.budget=null; state.comps=[]; state.renewedOverride=[];
+  updateDealHeader();
+  await loadDealData(deal.id);
+  save(); renderAll(); updateHdr();
+}
+
+async function load(){
+  // 1. Fetch deal list
   try{
-    const saved = localStorage.getItem('darby_oversight_v2');
-    if(saved){ state = Object.assign(state, JSON.parse(saved)); }
-    else{ state = Object.assign(state, BUNDLED_DATA); }
-  }catch(e){ state = Object.assign(state, BUNDLED_DATA); }
+    const res=await fetch('/api/deals');
+    if(res.ok) DEALS=await res.json();
+  }catch(e){}
+
+  // 2. Pick current deal (stored preference or first)
+  const storedId=localStorage.getItem('balboa_current_deal');
+  const picked=DEALS.find(d=>d.id===storedId)||DEALS[0]||null;
+  if(picked) DEAL_ID=picked.id;
+
+  // 3. Populate switcher UI
+  populateDealSwitcher();
+
+  // 4. Load data
+  if(DEAL_ID){
+    await loadDealData(DEAL_ID);
+  } else {
+    // Offline fallback — no deals found, use bundled Darby data
+    try{
+      const saved=localStorage.getItem('darby_oversight_v2');
+      if(saved){ state=Object.assign(state,JSON.parse(saved)); }
+      else{ state=Object.assign(state,BUNDLED_DATA); }
+    }catch(e){ state=Object.assign(state,BUNDLED_DATA); }
+  }
 }
 
 /* ============ Helpers ============ */
@@ -26283,6 +26339,10 @@ function revealCompDetail(){
 document.getElementById('addComp').addEventListener('click',()=>{
   state.comps.push(blankComp());renderComps();renderDashboard();save();
   revealCompDetail();
+});
+document.getElementById('dealSwitcher').addEventListener('change',e=>{
+  const deal=DEALS.find(d=>d.id===e.target.value);
+  if(deal) switchDeal(deal);
 });
 const hdFi=document.getElementById('hdFileInput');
 document.getElementById('importHelloData').addEventListener('click',()=>hdFi.click());

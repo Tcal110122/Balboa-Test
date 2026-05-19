@@ -349,6 +349,11 @@
   <!-- FLOORPLAN PRICING -->
   <div class="panel" id="panel-floorplans">
     <div id="fpEmpty" class="card"><div class="empty">Load a rent roll to see floorplan-level pricing.</div></div>
+    <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
+      <button class="btn subtle" id="fpMappingBtn">Upload Floor Plan Names</button>
+      <input type="file" id="fpMappingFile" accept=".xlsx,.xls" style="display:none">
+      <span id="fpMappingReport" style="font-size:12px;color:var(--ink-faint)"></span>
+    </div>
     <div id="fpContent" style="display:none">
       <div class="hint">
         <b>Two kinds of mispricing, side by side.</b> <b>Market-rent deviation</b> compares each
@@ -691,19 +696,20 @@ const FLOORPLAN_MAP = {
   'dabc20b':{name:'Ford A',bed:3,bath:2},
   'dabc20c':{name:'Marlin',bed:3,bath:2}
 };
-// Display label for a Yardi code: "Name (code)" if mapped, else raw code.
+// Display label for a floor plan code: check per-deal override first, then hardcoded map, else raw code.
 function fpLabel(code){
+  if(state.fpNames&&state.fpNames[code]) return state.fpNames[code];
   const m=FLOORPLAN_MAP[code];
   return m ? m.name : code;
 }
-function fpHas(code){ return !!FLOORPLAN_MAP[code]; }
+function fpHas(code){ return !!(state.fpNames&&state.fpNames[code])||!!FLOORPLAN_MAP[code]; }
 function fpIsFuzzy(code){ return !!(FLOORPLAN_MAP[code]&&FLOORPLAN_MAP[code].fuzzy); }
 
 /* ============ State ============ */
 let DEAL_ID = null;
 let DEALS = [];
 let state = {
-  rrDate:'', units:[], comps:[], snapshots:[], renewedOverride:[], t12:null, budget:null
+  rrDate:'', units:[], comps:[], snapshots:[], renewedOverride:[], t12:null, budget:null, fpNames:{}
 };
 function today(){return new Date().toISOString().slice(0,10);}
 function uid(){return Math.random().toString(36).slice(2,9);}
@@ -23519,15 +23525,17 @@ function restoreLocalState(dealId){
 }
 async function loadDealData(dealId){
   try{
-    const [rrRes, t12Res, budRes, compRes] = await Promise.all([
+    const [rrRes, t12Res, budRes, compRes, fpRes] = await Promise.all([
       fetch('/api/rentroll?deal_id='+dealId), fetch('/api/t12?deal_id='+dealId),
-      fetch('/api/budget?deal_id='+dealId),   fetch('/api/comps?deal_id='+dealId)
+      fetch('/api/budget?deal_id='+dealId),   fetch('/api/comps?deal_id='+dealId),
+      fetch('/api/fp-mapping?deal_id='+dealId)
     ]);
     let apiOk = false;
     if(rrRes.ok){ const snap=await rrRes.json(); if(snap.units&&snap.units.length){ state.units=snap.units; state.rrDate=snap.as_of_date; apiOk=true; } }
     if(t12Res.ok){ const d=await t12Res.json(); if(d.data) state.t12=d.data; }
     if(budRes.ok){ const d=await budRes.json(); if(d.data) state.budget=d.data; }
     if(compRes.ok){ const d=await compRes.json(); if(d.comps&&d.comps.length) state.comps=d.comps; }
+    if(fpRes.ok){ const d=await fpRes.json(); if(d.data&&Object.keys(d.data).length) state.fpNames=d.data; }
     return apiOk;
   }catch(e){ return false; }
 }
@@ -23560,7 +23568,7 @@ async function switchDeal(deal){
   DEAL_ID=deal.id;
   localStorage.setItem('balboa_current_deal',deal.id);
   state.units=[]; state.rrDate=''; state.snapshots=[];
-  state.t12=null; state.budget=null; state.comps=[]; state.renewedOverride=[];
+  state.t12=null; state.budget=null; state.comps=[]; state.renewedOverride=[]; state.fpNames={};
   updateDealHeader();
   await loadDealData(deal.id);
   restoreLocalState(deal.id);
@@ -24496,6 +24504,37 @@ function handleT12File(file){
         ${res.months.length} months · NOI <b>${noi}</b>.</div>`;
     }catch(err){
       rpt.innerHTML='<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function handleFpMappingFile(file){
+  const rpt=document.getElementById('fpMappingReport');
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
+      const map={};
+      rows.forEach(row=>{
+        const code=String(row[0]||'').trim();
+        const name=String(row[1]||'').trim();
+        if(code&&name) map[code]=name;
+      });
+      const count=Object.keys(map).length;
+      if(!count){rpt.textContent='No mappings found — check file format (col A: code, col B: name).';return;}
+      state.fpNames=map;
+      save();
+      if(DEAL_ID){
+        fetch('/api/fp-mapping',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({deal_id:DEAL_ID,data:map})}).catch(()=>{});
+      }
+      renderFloorplans();
+      rpt.textContent=count+' floor plan'+(count===1?'':'s')+' mapped.';
+    }catch(err){
+      rpt.textContent='Could not read file: '+err.message;
     }
   };
   reader.readAsArrayBuffer(file);
@@ -26478,6 +26517,8 @@ document.getElementById('exportCsv').addEventListener('click',exportCsv);
 document.getElementById('exportJson').addEventListener('click',exportJson);
 document.getElementById('importJson').addEventListener('click',()=>document.getElementById('importFile').click());
 document.getElementById('importFile').addEventListener('change',e=>{if(e.target.files[0])importJson(e.target.files[0]);});
+document.getElementById('fpMappingBtn').addEventListener('click',()=>document.getElementById('fpMappingFile').click());
+document.getElementById('fpMappingFile').addEventListener('change',e=>{if(e.target.files[0])handleFpMappingFile(e.target.files[0]);});
 document.getElementById('resetAll').addEventListener('click',()=>{
   if(confirm('Reset ALL data — rent roll, comps, and every snapshot? Cannot be undone.')){
     state={rrDate:'',units:[],comps:[],snapshots:[]};

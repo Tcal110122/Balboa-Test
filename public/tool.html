@@ -23501,9 +23501,21 @@ const BUNDLED_DATA = {
 };
 
 /* ============ Storage ============ */
+function lsKey(dealId){ return dealId ? 'balboa_state_'+dealId : 'darby_oversight_v2'; }
 function save(){
-  try{ localStorage.setItem('darby_oversight_v2', JSON.stringify(state)); }
+  try{ localStorage.setItem(lsKey(DEAL_ID), JSON.stringify(state)); }
   catch(e){ console.error('save failed',e); }
+}
+function restoreLocalState(dealId){
+  // Restore snapshots + renewedOverride from localStorage (not stored in Supabase).
+  // Falls back to legacy key so existing Darby history migrates automatically.
+  try{
+    const raw=localStorage.getItem(lsKey(dealId))||localStorage.getItem('darby_oversight_v2');
+    if(!raw) return;
+    const ls=JSON.parse(raw);
+    if(ls.snapshots&&ls.snapshots.length) state.snapshots=ls.snapshots;
+    if(ls.renewedOverride&&ls.renewedOverride.length) state.renewedOverride=ls.renewedOverride;
+  }catch(e){}
 }
 async function loadDealData(dealId){
   try{
@@ -23551,6 +23563,7 @@ async function switchDeal(deal){
   state.t12=null; state.budget=null; state.comps=[]; state.renewedOverride=[];
   updateDealHeader();
   await loadDealData(deal.id);
+  restoreLocalState(deal.id);
   save(); renderAll(); updateHdr();
 }
 
@@ -23572,6 +23585,7 @@ async function load(){
   // 4. Load data
   if(DEAL_ID){
     await loadDealData(DEAL_ID);
+    restoreLocalState(DEAL_ID);
   } else {
     // Offline fallback — no deals found, use bundled Darby data
     try{

@@ -25163,22 +25163,26 @@ function renderIncome(){
       jul:'July',aug:'August',sep:'September',oct:'October',nov:'November',dec:'December'};
     const MORDER=b.monthOrder||['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 
-    // ---- T-12 actuals overlay: the T-12 carries real monthly actuals; map its
-    // 2026 months onto the scorecard so closed-month data isn't limited to the
-    // budget workbook's actuals-input block. T-12 first, budget-workbook fallback. ----
-    const t12MonIdx={};   // 'jan' -> column index in t.months, for 2026 only
+    // ---- T-12 actuals overlay: map the most-recent year of T-12 months onto
+    // the scorecard so closed-month data fills the actual vs. budget columns. ----
+    // Detect which year(s) appear in the T-12 and use the most recent one.
+    const t12Years=[...new Set((t&&t.months?t.months:[]).map(mo=>{
+      const m=String(mo.label||'').match(/(\d{4})/); return m?m[1]:null;
+    }).filter(Boolean))].sort();
+    const t12Year=t12Years[t12Years.length-1]||'2026';
+    const t12MonIdx={};   // 'jan' -> column index in t.months
     if(t&&t.months){
       t.months.forEach((mo,i)=>{
         const lab=String(mo.label||'').toLowerCase();
         const mm=lab.slice(0,3);
-        if(/2026/.test(lab) && MORDER.indexOf(mm)>=0) t12MonIdx[mm]=i;
+        if(lab.includes(t12Year) && MORDER.indexOf(mm)>=0) t12MonIdx[mm]=i;
       });
     }
     const t12MonthsCovered=Object.keys(t12MonIdx);
-    // resolve a headline line's actual for a given 2026 month
+    // resolve a headline line's actual for a given month — strictly from the T-12.
     const t12HeadFor={income:t&&t.totalIncome, opex:t&&t.totalOpEx,
                       noi:t&&t.noi, noiAR:t&&t.noiAfterRepl};
-    // actual for a headline line in a 2026 month — strictly from the T-12.
+    // actual for a headline line in a month — strictly from the T-12.
     // If the T-12 doesn't cover the month, there is no actual (returns null).
     const mergedActual=(metricKey, mon, scData)=>{
       const idx=t12MonIdx[mon];

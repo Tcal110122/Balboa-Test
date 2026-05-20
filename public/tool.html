@@ -23975,6 +23975,8 @@ function parseT12(wb){
     return {label, acct, row:r, vals:d.vals, total:d.total};
   };
   // ---- headline operating lines (anchored on Yardi subtotal codes) ----
+  {const _re=/^(total income|total revenue|effective gross income|egi)/i;
+  console.log('[T12 fig] hdrRow:',hdrRow,'byAcct[49999-999]:',byAcct['49999-999'],'findRow result:',findRow(_re),'row51col1:',String((grid[51]||[])[1]||'').trim(),'matches:',_re.test(String((grid[51]||[])[1]||'').trim()));}
   const totalIncome   = fig('49999-999','Total Income',           /^(total income|total revenue|effective gross income|egi)/i);
   const totalOpEx     = fig('66999-199','Total Operating Expenses',/^total (oper|expens)/i);
   const noi           = fig('69999-099','Net Operating Income',   /^net operating income/i);

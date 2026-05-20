@@ -24021,15 +24021,14 @@ function parseT12(wb){
     ['71499-099','Routine Replacement', /^routine repl/i],
     ['71899-099','Capital / Renovation',/^(capital|renovation)/i]
   ].map(([acct,name,re])=>{ const f=fig(acct,name,re); return f?{...f,name}:null; }).filter(Boolean);
-  // compute NOI After Replacements if no direct row found
-  if(!noiAfterRepl && noi && belowNOI.length){
-    const replVals=noi.vals.map((v,i)=>{
-      const rv=belowNOI.reduce((s,c)=>s+(c.vals&&c.vals[i]!=null?c.vals[i]:0),0);
-      return v!=null?v-rv:null;
-    });
-    const replTotal=belowNOI.reduce((s,c)=>s+(c.total||0),0);
-    noiAfterRepl={label:'NOI After Replacements',acct:'computed',row:-1,
-      vals:replVals,total:(noi.total||0)-replTotal};
+  // fallback: noi + interest add-back (acct 6801-0000) for properties without a direct NOI-after row
+  if(!noiAfterRepl && noi){
+    const interest=fig('6801-0000','Interest Expense');
+    if(interest){
+      const vals=noi.vals.map((v,i)=>v!=null?v+(interest.vals[i]||0):null);
+      noiAfterRepl={label:'NOI After Replacements',acct:'computed',row:-1,
+        vals,total:(noi.total||0)+(interest.total||0)};
+    }
   }
 
   // ---- line-item detail: detail rows are the i5-level entries directly above

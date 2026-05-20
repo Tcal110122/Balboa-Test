@@ -23953,16 +23953,16 @@ function parseT12(wb){
     const a=String((row||[])[0]||'').trim();
     if(a) byAcct[a]=r;
   });
-  // DEBUG: log all data-row labels so mismatched regexes can be diagnosed
+  // DEBUG: log row labels to diagnose regex mismatches
   {const _lbls=[];
   grid.forEach((row,r)=>{
     if(r<=hdrRow) return;
-    const c0=String((row||[])[0]||'').trim();
-    const c1=String((row||[])[1]||'').trim();
-    const hasVal=months.some(m=>num((row||[])[m.ci])!=null);
-    if(hasVal&&(c0||c1)) _lbls.push((c1||c0));
+    for(let ci=0;ci<4;ci++){
+      const v=String((row||[])[ci]||'').trim();
+      if(v){_lbls.push({r,ci,v});break;}
+    }
   });
-  console.log('[T12 labels]',_lbls);}
+  console.log('[T12 labels]',JSON.stringify(_lbls.slice(0,80)));}
   // fallback: scan rows below the header for a label match in col 0 or col 1
   const findRow=(re)=>{
     for(let r=hdrRow+1;r<grid.length;r++){

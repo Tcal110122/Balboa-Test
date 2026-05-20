@@ -24104,9 +24104,7 @@ function parseBudget(wb){
   }
   if(hdrRow<0) return {error:'Could not locate the month header row on the Rolling Forecast tab.'};
   const hdr=(grid[hdrRow]||[]).map(v=>String(v||'').trim());
-  console.log('[Budget] hdr:',JSON.stringify(hdr.slice(0,20)));
-  console.log('[Budget] col0 labels:',JSON.stringify(grid.slice(hdrRow+1,hdrRow+60).map((r,i)=>String((r||[])[0]||'').trim()).filter(Boolean)));
-  const lc=(re)=>hdr.findIndex(v=>re.test(v));
+const lc=(re)=>hdr.findIndex(v=>re.test(v));
   // month columns in order
   const monCol={};
   hdr.forEach((v,ci)=>{
@@ -24676,15 +24674,11 @@ function parseRPMBudget(wb){
   const opexMonths=sec(/^total expense/i);
   const noiMonths=sec(/^total net operating income/i);
   if(!incomeMonths||!opexMonths||!noiMonths) return {error:'Could not locate Total Revenue, Total Expense, or NOI'};
-  console.log('[RPM sections]',JSON.stringify(Object.keys(sections)));
-  const gaM=sec(/^general & administrative$/i), mktM=sec(/^marketing$/i);
-  const gaMerged={};
-  monthKeys.forEach(m=>{gaMerged[m]=((gaM&&gaM[m])||0)+((mktM&&mktM[m])||0);});
   const catByMonth={
     '51599-099':{budget:sec(/^payroll$/i)||nullMonths(),actual:nullMonths()},
     '53999-099':{budget:sec(/^repairs & maintenance$/i)||nullMonths(),actual:nullMonths()},
-    '54999-099':{budget:sec(/^(advertising|leasing|marketing)$/i)||nullMonths(),actual:nullMonths()},
-    '58399-099':{budget:gaMerged,actual:nullMonths()},
+    '54999-099':{budget:sec(/^marketing$/i)||nullMonths(),actual:nullMonths()},
+    '58399-099':{budget:sec(/^general & administrative$/i)||nullMonths(),actual:nullMonths()},
     '59999-099':{budget:sec(/^utilities$/i)||nullMonths(),actual:nullMonths()},
     '61999-099':{budget:sec(/^management fees?$/i)||nullMonths(),actual:nullMonths()},
     '62999-099':{budget:sec(/^taxes?$/i)||nullMonths(),actual:nullMonths()},
@@ -24702,8 +24696,7 @@ function handleBudgetFile(file){
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
       const isRPM=wb.SheetNames.some(n=>/modeldetailview/i.test(n));
-      console.log('[Budget entry] sheets:',JSON.stringify(wb.SheetNames),'isRPM:',isRPM);
-      const res=isRPM?parseRPMBudget(wb):parseBudget(wb);
+const res=isRPM?parseRPMBudget(wb):parseBudget(wb);
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.budget=res;
       save();

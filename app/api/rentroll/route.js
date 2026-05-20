@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server'
 import supabase from '@/lib/supabase'
+import { requireAuth, canAccessDeal } from '@/lib/auth'
 
 export async function GET(request) {
+  const auth = await requireAuth(request)
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { searchParams } = new URL(request.url)
   const dealId = searchParams.get('deal_id')
+
+  if (dealId && !canAccessDeal(auth, dealId)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   let query = supabase
     .from('rent_roll_snapshots')

@@ -210,7 +210,10 @@
     <div class="hdr-meta">
       <div>Rent roll as-of: <b id="rrDate">— not loaded —</b></div>
       <div id="snapCount">0 period snapshots on record</div>
-      <button class="btn subtle sm" id="printPdf" style="margin-top:7px">Print / Save as PDF</button>
+      <div style="display:flex;gap:8px;margin-top:7px;align-items:center">
+        <button class="btn subtle sm" id="printPdf">Print / Save as PDF</button>
+        <button class="btn subtle sm" id="logoutBtn" style="color:#6b7280">Sign out</button>
+      </div>
     </div>
   </div>
 </header>
@@ -26576,6 +26579,9 @@ budz.addEventListener('dragleave',()=>budz.classList.remove('over'));
 budz.addEventListener('drop',e=>{
   e.preventDefault();budz.classList.remove('over');
   if(e.dataTransfer.files[0])handleBudgetFile(e.dataTransfer.files[0]);
+});
+document.getElementById('logoutBtn').addEventListener('click',()=>{
+  fetch('/api/auth/signout',{method:'POST'}).finally(()=>{window.location.href='/login';});
 });
 document.getElementById('printPdf').addEventListener('click',()=>{
   // render every panel so all sections appear in the PDF, not just the active tab

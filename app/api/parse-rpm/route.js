@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import { parseRPMMarket } from '@/lib/rpm-parser'
 import supabase from '@/lib/supabase'
+import { requireAuth, canAccessDeal } from '@/lib/auth'
 
 export async function POST(request) {
+  const auth = await requireAuth(request)
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
     const formData = await request.formData()
     const file = formData.get('file')
@@ -10,6 +14,7 @@ export async function POST(request) {
 
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     if (!dealId) return NextResponse.json({ error: 'No deal_id provided' }, { status: 400 })
+    if (!canAccessDeal(auth, dealId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const buffer = Buffer.from(await file.arrayBuffer())
     const parsed = parseRPMMarket(buffer)
@@ -23,11 +28,7 @@ export async function POST(request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    return NextResponse.json({
-      success: true,
-      count: parsed.count,
-      sfEnriched: 0
-    })
+    return NextResponse.json({ success: true, count: parsed.count, sfEnriched: 0 })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

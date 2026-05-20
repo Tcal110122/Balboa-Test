@@ -223,7 +223,8 @@
 <div class="tabs">
   <button class="tab active" data-tab="load">Load Rent Roll</button>
   <button class="tab" data-tab="dashboard">Oversight Dashboard</button>
-  <button class="tab" data-tab="comps">Comp Set</button>
+  <button class="tab" data-tab="comps" id="tabComps">Comp Set</button>
+  <button class="tab" data-tab="preleasing" id="tabPreleasing" style="display:none">Pre-Leasing</button>
   <button class="tab" data-tab="floorplans">Floorplan Pricing</button>
   <button class="tab" data-tab="renewals">Renewals &amp; Exposure</button>
   <button class="tab" data-tab="income">Income</button>
@@ -347,6 +348,49 @@
       <span class="note muted" id="compDetailHint">Edit manual comps, remove comps, and view HelloData leased %/exposure here.</span>
     </div>
     <div id="compContainer" style="display:none"></div>
+  </div>
+
+  <!-- PRE-LEASING (student housing) -->
+  <div class="panel" id="panel-preleasing">
+    <div class="hint">
+      <b>Student housing pre-leasing:</b> Upload the pre-lease summary report and rent roll each period to track next-year velocity by floorplan. Each upload is stored as a snapshot — upload older reports to build a prior-year comparison.
+    </div>
+    <div class="toolbar">
+      <button class="btn ghost" id="uploadPreleaseBtn">Upload Pre-Lease Report (.xlsx)</button>
+      <input type="file" id="preleaseFileInput" accept=".xlsx,.xls" style="display:none">
+      <button class="btn ghost" id="uploadStudentRRBtn">Upload Rent Roll (.xlsx)</button>
+      <input type="file" id="studentRRFileInput" accept=".xlsx,.xls" style="display:none">
+    </div>
+    <div id="plUploadReport" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px"></div>
+    <div id="plEmpty" class="card"><div class="empty">Upload a pre-lease report to view pre-leasing status.</div></div>
+    <div id="plContent" style="display:none">
+      <div class="tiles" id="plKpis"></div>
+      <div class="card">
+        <div class="card-hd">
+          <h2>Pre-Leasing by Floorplan</h2>
+          <span class="note" id="plAsOf"></span>
+        </div>
+        <div class="card-bd">
+          <table>
+            <thead>
+              <tr>
+                <th>Floorplan</th>
+                <th class="r">Beds</th>
+                <th class="r">Curr. Occ.</th>
+                <th class="r">Curr. Avg Rate</th>
+                <th class="r">Pre-Leased</th>
+                <th class="r">%</th>
+                <th class="r">New / Renewal</th>
+                <th class="r">Next Yr Rate</th>
+                <th class="r">Rate Chg</th>
+                <th class="r">Avail.</th>
+              </tr>
+            </thead>
+            <tbody id="plTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- FLOORPLAN PRICING -->
@@ -712,7 +756,8 @@ function fpIsFuzzy(code){ return !!(FLOORPLAN_MAP[code]&&FLOORPLAN_MAP[code].fuz
 let DEAL_ID = null;
 let DEALS = [];
 let state = {
-  rrDate:'', units:[], comps:[], snapshots:[], renewedOverride:[], t12:null, budget:null, fpNames:{}
+  rrDate:'', units:[], comps:[], snapshots:[], renewedOverride:[], t12:null, budget:null, fpNames:{},
+  studentPrelease:null, studentRR:null
 };
 function today(){return new Date().toISOString().slice(0,10);}
 function uid(){return Math.random().toString(36).slice(2,9);}
@@ -23539,6 +23584,11 @@ async function loadDealData(dealId){
     if(budRes.ok){ const d=await budRes.json(); if(d.data) state.budget=d.data; }
     if(compRes.ok){ const d=await compRes.json(); if(d.comps&&d.comps.length) state.comps=d.comps; }
     if(fpRes.ok){ const d=await fpRes.json(); if(d.data&&Object.keys(d.data).length) state.fpNames=d.data; }
+    const deal=DEALS.find(d=>d.id===dealId);
+    if(deal?.type==='student'){
+      const stuRes=await fetch('/api/student-data?deal_id='+dealId);
+      if(stuRes.ok){ const stu=await stuRes.json(); if(stu.prelease) state.studentPrelease=stu.prelease; if(stu.rr) state.studentRR=stu.rr; }
+    }
     return apiOk;
   }catch(e){ return false; }
 }
@@ -23565,6 +23615,21 @@ function populateDealSwitcher(){
   sel.innerHTML=DEALS.map(d=>`<option value="${d.id}"${d.id===DEAL_ID?' selected':''}>${d.name}</option>`).join('');
   sel.style.display=DEALS.length>1?'':'none';
   updateDealHeader();
+  const deal=DEALS.find(d=>d.id===DEAL_ID)||null;
+  updateTabsForDeal(deal);
+}
+
+function updateTabsForDeal(deal){
+  const isStudent=deal?.type==='student';
+  document.getElementById('tabComps').style.display=isStudent?'none':'';
+  document.getElementById('tabPreleasing').style.display=isStudent?'':'none';
+  const active=document.querySelector('.tab.active');
+  if(active&&((isStudent&&active.dataset.tab==='comps')||(!isStudent&&active.dataset.tab==='preleasing'))){
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+    document.querySelector('[data-tab="dashboard"]').classList.add('active');
+    document.getElementById('panel-dashboard').classList.add('active');
+  }
 }
 
 async function switchDeal(deal){
@@ -23572,7 +23637,9 @@ async function switchDeal(deal){
   localStorage.setItem('balboa_current_deal',deal.id);
   state.units=[]; state.rrDate=''; state.snapshots=[];
   state.t12=null; state.budget=null; state.comps=[]; state.renewedOverride=[]; state.fpNames={};
+  state.studentPrelease=null; state.studentRR=null;
   updateDealHeader();
+  updateTabsForDeal(deal);
   await loadDealData(deal.id);
   restoreLocalState(deal.id);
   save(); renderAll(); updateHdr();
@@ -26528,10 +26595,63 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='income') renderIncome();
     if(t.dataset.tab==='trends') renderTrends();
     if(t.dataset.tab==='history') renderHistory();
+    if(t.dataset.tab==='preleasing') renderPreleasing();
   });
 });
 
-function renderAll(){ renderDashboard(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); }
+function renderAll(){ renderDashboard(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); renderPreleasing(); }
+
+/* ============ Pre-Leasing ============ */
+function renderPreleasing(){
+  const pl=state.studentPrelease, rr=state.studentRR;
+  const empty=document.getElementById('plEmpty'), content=document.getElementById('plContent');
+  if(!pl){ empty.style.display=''; content.style.display='none'; return; }
+  empty.style.display='none'; content.style.display='';
+  const t=pl.totals;
+  document.getElementById('plKpis').innerHTML=`
+    <div class="tile"><div class="tile-val">${(t.percent*100).toFixed(1)}%</div><div class="tile-lbl">Pre-Leased</div></div>
+    <div class="tile"><div class="tile-val">${t.total} / ${t.rentableUnits}</div><div class="tile-lbl">Beds Signed</div></div>
+    <div class="tile"><div class="tile-val">${t.avgScheduledCharges>0?money(t.avgScheduledCharges):'—'}</div><div class="tile-lbl">Avg Next Yr Rate</div></div>
+    <div class="tile"><div class="tile-val">${t.projectedAvailability}</div><div class="tile-lbl">Projected Available</div></div>`;
+  let asOfText='Pre-lease: '+pl.period; if(rr) asOfText+=' · Rent roll: '+rr.period;
+  document.getElementById('plAsOf').textContent=asOfText;
+  const rrMap={}; if(rr) rr.floorplans.forEach(fp=>{rrMap[fp.type]=fp;});
+  const tbody=document.getElementById('plTableBody');
+  const rows=pl.floorplans.map(fp=>{
+    const curr=rrMap[fp.type];
+    const currOcc=curr?curr.occupiedUnits+'/'+curr.rentableUnits:'—';
+    const currRate=curr?money(curr.scheduledCharges):'—';
+    const nextRate=fp.avgScheduledCharges>0?money(fp.avgScheduledCharges):'—';
+    let rateChg='—';
+    if(curr&&fp.avgScheduledCharges>0&&curr.scheduledCharges>0){
+      const d=fp.avgScheduledCharges-curr.scheduledCharges, p=d/curr.scheduledCharges*100, s=d>=0?'+':'';
+      rateChg=`${s}${money(d)} (${s}${p.toFixed(1)}%)`;
+    }
+    return `<tr><td>${fp.type}</td><td class="r">${fp.rentableUnits}</td><td class="r">${currOcc}</td><td class="r">${currRate}</td><td class="r">${fp.total}</td><td class="r">${fp.rentableUnits>0?(fp.percent*100).toFixed(1)+'%':'—'}</td><td class="r">${fp.newLease}N / ${fp.renewal}R</td><td class="r">${nextRate}</td><td class="r">${rateChg}</td><td class="r">${fp.projectedAvailability}</td></tr>`;
+  });
+  const rrT=rr?.totals;
+  rows.push(`<tr style="font-weight:700;border-top:2px solid var(--line)"><td>Total</td><td class="r">${t.rentableUnits}</td><td class="r">${rrT?rrT.occupiedUnits+'/'+rrT.rentableUnits:'—'}</td><td class="r">${rrT?money(rrT.scheduledCharges):'—'}</td><td class="r">${t.total}</td><td class="r">${(t.percent*100).toFixed(1)}%</td><td class="r">${t.newLease}N / ${t.renewal}R</td><td class="r">${t.avgScheduledCharges>0?money(t.avgScheduledCharges):'—'}</td><td class="r">—</td><td class="r">${t.projectedAvailability}</td></tr>`);
+  tbody.innerHTML=rows.join('');
+}
+
+function plUpload(endpoint, file, label){
+  if(!DEAL_ID||!file) return;
+  const rpt=document.getElementById('plUploadReport');
+  rpt.textContent='Uploading '+label+'…';
+  const fd=new FormData(); fd.append('file',file); fd.append('deal_id',DEAL_ID);
+  fetch(endpoint,{method:'POST',body:fd})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.error){ rpt.textContent='Error: '+d.error; return; }
+      rpt.textContent=label+' loaded — '+d.floorplans+' floorplans ('+d.period+')';
+      fetch('/api/student-data?deal_id='+DEAL_ID).then(r=>r.json()).then(stu=>{
+        if(stu.prelease) state.studentPrelease=stu.prelease;
+        if(stu.rr) state.studentRR=stu.rr;
+        renderPreleasing();
+      });
+    })
+    .catch(e=>{ rpt.textContent='Upload failed: '+e.message; });
+}
 
 /* ============ Wire controls ============ */
 const dz=document.getElementById('dropzone'), fi=document.getElementById('fileInput');
@@ -26562,6 +26682,12 @@ document.getElementById('dealSwitcher').addEventListener('change',e=>{
 const hdFi=document.getElementById('hdFileInput');
 document.getElementById('importHelloData').addEventListener('click',()=>hdFi.click());
 hdFi.addEventListener('change',e=>{if(e.target.files[0])handleMarketFile(e.target.files[0]);});
+const plFi=document.getElementById('preleaseFileInput');
+document.getElementById('uploadPreleaseBtn').addEventListener('click',()=>plFi.click());
+plFi.addEventListener('change',e=>{if(e.target.files[0]){plUpload('/api/parse-student-prelease',e.target.files[0],'Pre-Lease Report');plFi.value='';}});
+const plRRFi=document.getElementById('studentRRFileInput');
+document.getElementById('uploadStudentRRBtn').addEventListener('click',()=>plRRFi.click());
+plRRFi.addEventListener('change',e=>{if(e.target.files[0]){plUpload('/api/parse-student-rr',e.target.files[0],'Rent Roll');plRRFi.value='';}});
 const t12dz=document.getElementById('t12Drop'), t12fi=document.getElementById('t12FileInput');
 t12dz.addEventListener('click',()=>t12fi.click());
 t12fi.addEventListener('change',e=>{if(e.target.files[0])handleT12File(e.target.files[0]);});

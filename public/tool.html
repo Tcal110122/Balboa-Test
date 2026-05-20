@@ -23963,11 +23963,12 @@ function parseT12(wb){
     }
   });
   console.log('[T12 labels]',JSON.stringify(_lbls.slice(0,80)));}
-  // fallback: scan rows below the header for a label match in col 0 or col 1
+  // fallback: scan rows below the header for a label match in cols 0-5
   const findRow=(re)=>{
     for(let r=hdrRow+1;r<grid.length;r++){
-      if(re.test(String((grid[r]||[])[0]||'').trim())) return r;
-      if(re.test(String((grid[r]||[])[1]||'').trim())) return r;
+      for(let ci=0;ci<6;ci++){
+        if(re.test(String((grid[r]||[])[ci]||'').trim())) return r;
+      }
     }
     return null;
   };
@@ -23980,10 +23981,10 @@ function parseT12(wb){
     return {label, acct, row:r, vals:d.vals, total:d.total};
   };
   // ---- headline operating lines (anchored on Yardi subtotal codes) ----
-  const totalIncome   = fig('49999-999','Total Income',           /^(total income|effective gross income|egi)$/i);
+  const totalIncome   = fig('49999-999','Total Income',           /^(total income|effective gross income|egi)/i);
   const totalOpEx     = fig('66999-199','Total Operating Expenses',/^total oper/i);
   const noi           = fig('69999-099','Net Operating Income',   /^net operating income/i);
-  const noiAfterRepl  = fig('71999-099','NOI After Replacements', /^noi after repl/i);
+  let   noiAfterRepl  = fig('71999-099','NOI After Replacements', /^noi after (repl|res)/i);
   const netIncome     = fig('89999-099','Total Non-Operating Expense');
   const potentialRent = fig('41029-099','Potential Rent',         /^potential rent/i);
   const finalNet      = fig('84999-099','');
@@ -24017,9 +24018,19 @@ function parseT12(wb){
   };
   // below-NOI categories
   const belowNOI=[
-    ['71499-099','Routine Replacement'],
-    ['71899-099','Capital / Renovation']
-  ].map(([acct,name])=>{ const f=fig(acct,name); return f?{...f,name}:null; }).filter(Boolean);
+    ['71499-099','Routine Replacement', /^routine repl/i],
+    ['71899-099','Capital / Renovation',/^(capital|renovation)/i]
+  ].map(([acct,name,re])=>{ const f=fig(acct,name,re); return f?{...f,name}:null; }).filter(Boolean);
+  // compute NOI After Replacements if no direct row found
+  if(!noiAfterRepl && noi && belowNOI.length){
+    const replVals=noi.vals.map((v,i)=>{
+      const rv=belowNOI.reduce((s,c)=>s+(c.vals&&c.vals[i]!=null?c.vals[i]:0),0);
+      return v!=null?v-rv:null;
+    });
+    const replTotal=belowNOI.reduce((s,c)=>s+(c.total||0),0);
+    noiAfterRepl={label:'NOI After Replacements',acct:'computed',row:-1,
+      vals:replVals,total:(noi.total||0)-replTotal};
+  }
 
   // ---- line-item detail: detail rows are the i5-level entries directly above
   // each category subtotal. We collect rows above the subtotal until we hit

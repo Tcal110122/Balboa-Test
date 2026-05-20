@@ -24104,6 +24104,8 @@ function parseBudget(wb){
   }
   if(hdrRow<0) return {error:'Could not locate the month header row on the Rolling Forecast tab.'};
   const hdr=(grid[hdrRow]||[]).map(v=>String(v||'').trim());
+  console.log('[Budget] hdr:',JSON.stringify(hdr.slice(0,20)));
+  console.log('[Budget] col0 labels:',JSON.stringify(grid.slice(hdrRow+1,hdrRow+60).map((r,i)=>String((r||[])[0]||'').trim()).filter(Boolean)));
   const lc=(re)=>hdr.findIndex(v=>re.test(v));
   // month columns in order
   const monCol={};

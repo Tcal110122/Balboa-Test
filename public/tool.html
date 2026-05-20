@@ -23684,6 +23684,7 @@ function parseRentRoll(rows){
   }
   // data starts after the header block; header label 'Unit' sits ~row5, sub-labels row6-7.
   // We detect first data row: col A looks like a unit id and col B has a type code.
+  console.log('[RR] first 15 rows:',JSON.stringify(rows.slice(0,15).map(r=>(r||[]).slice(0,9).map(v=>String(v??'').trim()))));
   const units=[]; let cur=null;
   for(let i=0;i<rows.length;i++){
     const row=rows[i]||[];

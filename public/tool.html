@@ -23953,16 +23953,10 @@ function parseT12(wb){
     const a=String((row||[])[0]||'').trim();
     if(a) byAcct[a]=r;
   });
-  // DEBUG: log row labels to diagnose regex mismatches
-  {const _lbls=[];
-  grid.forEach((row,r)=>{
-    if(r<=hdrRow) return;
-    for(let ci=0;ci<4;ci++){
-      const v=String((row||[])[ci]||'').trim();
-      if(v){_lbls.push({r,ci,v});break;}
-    }
-  });
-  console.log('[T12 labels]',JSON.stringify(_lbls.slice(0,80)));}
+  // DEBUG: log specific rows to diagnose totalIncome/totalOpEx regex mismatches
+  {const _rows=[49,50,51,52,53,54,155,156,157,158,159,160];
+  const _out=_rows.map(r=>({r,cells:(grid[r]||[]).slice(0,8).map(v=>String(v||'').trim())}));
+  console.log('[T12 rows]',JSON.stringify(_out));}
   // fallback: scan rows below the header for a label match in cols 0-5
   const findRow=(re)=>{
     for(let r=hdrRow+1;r<grid.length;r++){

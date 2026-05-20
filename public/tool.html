@@ -25285,9 +25285,8 @@ function renderIncome(){
 
   const avgMo=v=>v==null?null:v/12;
   const inc=t.totalIncome, opex=t.totalOpEx, noi=t.noi, noiAR=t.noiAfterRepl;
-  console.log('[Income] t12 months:', (t.months||[]).map(m=>m.label));
-  console.log('[Income] noi total:', noi&&noi.total, '| noi vals:', noi&&noi.vals);
-  console.log('[Income] categories count:', (t.categories||[]).length);
+  console.log('[Income] income:',inc?inc.total:'NULL', '| opex:',opex?opex.total:'NULL', '| noi:',noi?noi.total:'NULL', '| noiAR:',noiAR?noiAR.total:'NULL');
+  console.log('[Income] cats:',(t.categories||[]).length, (t.categories||[]).map(c=>c.name+'[8]='+((c.vals||[])[8]??'null')));
   const opexPctEGI=(inc&&inc.total&&opex)?opex.total/inc.total*100:null;
   const noiMargin=(inc&&inc.total&&noi)?noi.total/inc.total*100:null;
 

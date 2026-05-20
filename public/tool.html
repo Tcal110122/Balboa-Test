@@ -24660,6 +24660,7 @@ function parseRPMBudget(wb){
   const hdrIdx=grid.findIndex(r=>String((r||[])[0]||'').trim()==='Account Description');
   if(hdrIdx<0) return {error:'Could not find column headers in ModelDetailView'};
   const monthKeys=grid[hdrIdx].slice(1,13).map(l=>String(l||'').slice(0,3).toLowerCase());
+  console.log('[RPM] hdrIdx:',hdrIdx,'monthKeys:',JSON.stringify(monthKeys),'rawHdr:',JSON.stringify(grid[hdrIdx].slice(0,14)));
   function rowToMonths(row){const o={};monthKeys.forEach((m,i)=>{o[m]=num(row[i+1]);});return o;}
   function nullMonths(){const o={};monthKeys.forEach(m=>{o[m]=null;});return o;}
   const sections={};

@@ -23984,14 +23984,14 @@ function parseT12(wb){
   const finalNet      = fig('84999-099','');
   // ---- expense categories: [account code, display name, label-regex fallback] ----
   const expenseCats=[
-    ['51599-099','Payroll & Benefits',       /^(total )?payroll/i],
-    ['53999-099','General Maintenance',      /^(total )?(general maintenance|maintenance|repairs? & maint)/i],
-    ['54999-099','Advertising / Marketing',  /^(total )?(advertising|marketing)/i],
-    ['58399-099','General & Administrative', /^(total )?general.{0,5}admin/i],
-    ['59999-099','Utilities',                /^(total )?utilities/i],
-    ['61999-099','Management Fees',          /^(total )?management fee/i],
-    ['62999-099','Taxes',                    /^(total )?taxes?/i],
-    ['63999-099','Insurance',                /^(total )?insurance/i]
+    ['51599-099','Payroll & Benefits',       /^(total )?payroll\s*$/i],
+    ['53999-099','General Maintenance',      /^(total )?(general maintenance|repairs? & maint)\s*$/i],
+    ['54999-099','Advertising / Marketing',  /^(total )?(advertising|marketing)\s*$/i],
+    ['58399-099','General & Administrative', /^(total )?general.{0,5}admin\s*$/i],
+    ['59999-099','Utilities',                /^(total )?utilities\s*$/i],
+    ['61999-099','Management Fees',          /^(total )?management fee\s*$/i],
+    ['62999-099','Taxes',                    /^(total )?taxes?\s*$/i],
+    ['63999-099','Insurance',                /^(total )?insurance\s*$/i]
   ];
   const categories=expenseCats.map(([acct,name,re])=>{
     const f=fig(acct,name,re);
@@ -24660,8 +24660,7 @@ function parseRPMBudget(wb){
   const hdrIdx=grid.findIndex(r=>String((r||[])[0]||'').trim()==='Account Description');
   if(hdrIdx<0) return {error:'Could not find column headers in ModelDetailView'};
   const monthKeys=grid[hdrIdx].slice(1,13).map(l=>String(l||'').slice(0,3).toLowerCase());
-  console.log('[RPM] hdrIdx:',hdrIdx,'monthKeys:',JSON.stringify(monthKeys),'rawHdr:',JSON.stringify(grid[hdrIdx].slice(0,14)));
-  function rowToMonths(row){const o={};monthKeys.forEach((m,i)=>{o[m]=num(row[i+1]);});return o;}
+function rowToMonths(row){const o={};monthKeys.forEach((m,i)=>{o[m]=num(row[i+1]);});return o;}
   function nullMonths(){const o={};monthKeys.forEach(m=>{o[m]=null;});return o;}
   const sections={};
   for(const row of grid.slice(hdrIdx+1)){

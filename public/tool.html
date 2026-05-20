@@ -23516,7 +23516,7 @@ function restoreLocalState(dealId){
   // Restore snapshots + renewedOverride from localStorage (not stored in Supabase).
   // Falls back to legacy key so existing Darby history migrates automatically.
   try{
-    const raw=localStorage.getItem(lsKey(dealId))||localStorage.getItem('darby_oversight_v2');
+    const raw=localStorage.getItem(lsKey(dealId));
     if(!raw) return;
     const ls=JSON.parse(raw);
     if(ls.snapshots&&ls.snapshots.length) state.snapshots=ls.snapshots;

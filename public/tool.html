@@ -24700,6 +24700,7 @@ function handleBudgetFile(file){
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
       const isRPM=wb.SheetNames.some(n=>/modeldetailview/i.test(n));
+      console.log('[Budget entry] sheets:',JSON.stringify(wb.SheetNames),'isRPM:',isRPM);
       const res=isRPM?parseRPMBudget(wb):parseBudget(wb);
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.budget=res;

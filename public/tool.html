@@ -23975,8 +23975,6 @@ function parseT12(wb){
     return {label, acct, row:r, vals:d.vals, total:d.total};
   };
   // ---- headline operating lines (anchored on Yardi subtotal codes) ----
-  {const _re=/^(total income|total revenue|effective gross income|egi)/i;
-  console.log('[T12 fig] hdrRow:',hdrRow,'byAcct[49999-999]:',byAcct['49999-999'],'findRow result:',findRow(_re),'row51col1:',String((grid[51]||[])[1]||'').trim(),'matches:',_re.test(String((grid[51]||[])[1]||'').trim()));}
   const totalIncome   = fig('49999-999','Total Income',           /^(total income|total revenue|effective gross income|egi)/i);
   const totalOpEx     = fig('66999-199','Total Operating Expenses',/^total (oper|expens)/i);
   const noi           = fig('69999-099','Net Operating Income',   /^net operating income/i);
@@ -25281,8 +25279,6 @@ function renderIncome(){
 
   const avgMo=v=>v==null?null:v/12;
   const inc=t.totalIncome, opex=t.totalOpEx, noi=t.noi, noiAR=t.noiAfterRepl;
-  console.log('[Income] income:',inc?inc.total:'NULL', '| opex:',opex?opex.total:'NULL', '| noi:',noi?noi.total:'NULL', '| noiAR:',noiAR?noiAR.total:'NULL');
-  console.log('[Income] cats:',(t.categories||[]).length, (t.categories||[]).map(c=>c.name+'[8]='+((c.vals||[])[8]??'null')));
   const opexPctEGI=(inc&&inc.total&&opex)?opex.total/inc.total*100:null;
   const noiMargin=(inc&&inc.total&&noi)?noi.total/inc.total*100:null;
 

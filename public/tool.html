@@ -24611,7 +24611,7 @@ function handleT12File(file){
       save();
       renderIncome();
       const noi=res.noi?money(res.noi.total):'—';
-      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-t12',{method:'POST',body:fd}).catch(()=>{});}
+      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-t12',{method:'POST',body:fd}).then(r=>{if(!r.ok)r.json().then(d=>console.warn('[T12 save failed]',r.status,d)).catch(()=>console.warn('[T12 save failed]',r.status));}).catch(e=>console.warn('[T12 save error]',e));}
             rpt.innerHTML=`<div class="hint"><b>T-12 loaded.</b> Period ${res.period||'—'} ·
         ${res.months.length} months · NOI <b>${noi}</b>.</div>`;
     }catch(err){

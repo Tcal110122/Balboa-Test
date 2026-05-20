@@ -19,7 +19,7 @@ export async function POST(request) {
     const { error } = await supabase
       .from('t12_snapshots')
       .upsert(
-        { deal_id: dealId, period: parsed.period, data: parsed },
+        { deal_id: dealId, period: parsed.period, data: parsed, parsed_at: new Date().toISOString() },
         { onConflict: 'deal_id,period' }
       )
 

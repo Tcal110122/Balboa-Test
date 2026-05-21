@@ -1,7 +1,21 @@
 import { NextResponse } from 'next/server'
 import { parseRentRoll } from '@/lib/rentroll-parser'
+import { parseOneSiteRR } from '@/lib/onesite-rr-parser'
+import * as XLSX from 'xlsx'
 import supabase from '@/lib/supabase'
 import { requireAuth, canAccessDeal } from '@/lib/auth'
+
+function detectFormat(buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 5 })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+  for (const row of grid) {
+    for (const cell of row) {
+      if (/onesite/i.test(String(cell))) return 'onesite'
+    }
+  }
+  return 'yardi'
+}
 
 export async function POST(request) {
   const auth = await requireAuth(request)
@@ -17,11 +31,13 @@ export async function POST(request) {
     if (!canAccessDeal(auth, dealId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    const parsed = parseRentRoll(buffer)
+    const format = detectFormat(buffer)
+    const parsed = format === 'onesite' ? parseOneSiteRR(buffer) : parseRentRoll(buffer)
 
-    if (!parsed.units.length) {
+    if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    if (!parsed.units?.length) {
       return NextResponse.json(
-        { error: 'No units found. Make sure this is a Yardi "Rent Roll with Lease Charges" export.' },
+        { error: 'No units found. Make sure this is a Yardi or OneSite rent roll export.' },
         { status: 400 }
       )
     }

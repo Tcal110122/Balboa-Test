@@ -707,6 +707,15 @@ function tierOfUnit(utype,sf){
   if(ov){const k=TIER_ALIASES[ov.toLowerCase().replace(/\s+/g,'')];if(k) return k;if(Object.values(TIER_ALIASES).includes(ov)) return ov;}
   return tierOf(sf);
 }
+function applyTierOverrides(){
+  const overrides=state.fpNames._tiers||{};
+  if(!Object.keys(overrides).length) return;
+  state.units.forEach(u=>{
+    const ov=overrides[u.utype]; if(!ov) return;
+    const k=TIER_ALIASES[ov.toLowerCase().replace(/\s+/g,'')];
+    if(k) u.tier=k; else if(Object.values(TIER_ALIASES).includes(ov)) u.tier=ov;
+  });
+}
 // map tier -> comp bedroom bucket
 const TIER_TO_BED = {
   'Small (<=610 SF)':'Studio / Small','1 Bedroom':'1 Bed',
@@ -23590,6 +23599,7 @@ async function loadDealData(dealId){
     if(budRes.ok){ const d=await budRes.json(); if(d.data) state.budget=d.data; }
     if(compRes.ok){ const d=await compRes.json(); if(d.comps&&d.comps.length) state.comps=d.comps; }
     if(fpRes.ok){ const d=await fpRes.json(); if(d.data&&Object.keys(d.data).length) state.fpNames=d.data; }
+    applyTierOverrides();
     const deal=DEALS.find(d=>d.id===dealId);
     if(deal?.type==='student'){
       const stuRes=await fetch('/api/student-data?deal_id='+dealId);
@@ -24719,12 +24729,14 @@ function handleFpMappingFile(file){
       const count=Object.keys(map).filter(k=>k!=='_tiers').length;
       if(!count){rpt.textContent='No mappings found — check file format (col A: code, col B: name).';return;}
       state.fpNames=map;
+      applyTierOverrides();
       save();
       if(DEAL_ID){
         fetch('/api/fp-mapping',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({deal_id:DEAL_ID,data:map})}).catch(()=>{});
       }
       renderFloorplans();
+      renderDashboard();
       rpt.textContent=count+' floor plan'+(count===1?'':'s')+' mapped.';
     }catch(err){
       rpt.textContent='Could not read file: '+err.message;

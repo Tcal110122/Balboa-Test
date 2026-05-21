@@ -25222,18 +25222,17 @@ function renderRanking(){
   card.style.display='block';
   const metric=document.getElementById('rankMetric').value;
 
-  // assemble rows per bedroom from comp data only (gross + NER from ApartmentIQ / HelloData)
+  // assemble rows per bedroom: comps + subject property (via ApartmentIQ/HelloData, not rent roll)
   const byBed={}; COMP_BEDS.forEach(b=>byBed[b]=[]);
   const _dealName=(DEALS.find(d=>d.id===DEAL_ID)||{}).name||'';
   const _normN=s=>s.toLowerCase().replace(/[^a-z0-9]/g,'');
   state.comps.forEach(c=>{
-    // skip the subject property (tagged on upload, or matched by deal name)
-    if(c.isSubject||(_dealName&&_normN(c.name)===_normN(_dealName))) return;
+    const isSubject=c.isSubject||(_dealName&&_normN(c.name)===_normN(_dealName));
     c.rows.forEach(r=>{
       const gross=compRowGross(r), ner=compRowNER(r), sf=num(r.sf);
       if(gross==null&&ner==null) return;
       byBed[r.bed].push({
-        name:c.name, isDarby:false, source:c.source,
+        name:c.name, isDarby:isSubject, source:c.source,
         gross:gross, ner:ner, sf:sf,
         grossPsf:(gross!=null&&sf)?gross/sf:null,
         nerPsf:(ner!=null&&sf)?ner/sf:null,
@@ -25253,7 +25252,7 @@ function renderRanking(){
     const hi=Math.max(...vals), lo=Math.min(...vals);
     html+=`<div style="padding:6px 14px 2px;display:flex;align-items:baseline;gap:10px">
       <span style="font-weight:700;font-size:12.5px">${b}</span>
-      ${darbyRank>0?`<span class="muted" style="font-size:11.5px">${subjectDealName} ranks
+      ${darbyRank>0?`<span class="muted" style="font-size:11.5px">${_dealName} ranks
         <b style="color:var(--accent)">#${darbyRank}</b> of ${rows.length}</span>`:''}
     </div>`;
     html+=`<table style="margin-bottom:10px"><thead><tr>

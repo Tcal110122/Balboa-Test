@@ -25217,15 +25217,12 @@ function renderRanking(){
   const card=document.getElementById('rankCard');
   const cont=document.getElementById('rankContainer');
   const hasComps=state.comps.length>0;
-  const hasUnits=state.units.length>0;
-  if(!hasComps&&!hasUnits){ card.style.display='none'; return; }
+  if(!hasComps){ card.style.display='none'; return; }
   card.style.display='block';
   const metric=document.getElementById('rankMetric').value;
-  const darby=hasUnits?darbyByBed():null;
 
-  // assemble rows per bedroom: each entry = {name, isDarby, gross, ner, sf, grossPsf, nerPsf, inplace}
+  // assemble rows per bedroom from comp data only (gross + NER from ApartmentIQ / HelloData)
   const byBed={}; COMP_BEDS.forEach(b=>byBed[b]=[]);
-  // comps
   state.comps.forEach(c=>{
     c.rows.forEach(r=>{
       const gross=compRowGross(r), ner=compRowNER(r), sf=num(r.sf);
@@ -25239,21 +25236,6 @@ function renderRanking(){
       });
     });
   });
-  // Subject property — ranked on Yardi market rent, in-place shown alongside
-  const subjectDealName=(DEALS.find(d=>d.id===DEAL_ID)||{}).name||'Subject';
-  if(darby){
-    COMP_BEDS.forEach(b=>{
-      const d=darby[b];
-      if(d&&d.market!=null){
-        byBed[b].push({
-          name:subjectDealName, isDarby:true,
-          gross:d.market, ner:d.market, sf:d.sf,
-          grossPsf:d.marketPsf, nerPsf:d.marketPsf,
-          inplace:d.inplace, inplacePsf:d.inplacePsf
-        });
-      }
-    });
-  }
   const metricKey={gross:'gross',ner:'ner',grossPsf:'grossPsf',nerPsf:'nerPsf'}[metric];
   const isPsf=metric==='grossPsf'||metric==='nerPsf';
   let html='';

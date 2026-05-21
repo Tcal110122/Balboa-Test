@@ -24694,6 +24694,7 @@ function parseApartmentIQ(wb){
       distance:distMi!=null?distMi.toFixed(2)+' mi':'',
       units:ps.totalUnits!=null?String(Math.round(ps.totalUnits)):'',
       source:'hellodata',hdWindow:'30-day',rows,
+      isSubject:cc.name===subjectName,
       sfMatched:rows.some(r=>r.sf!==''),
       perf:{leasedPct:ps.leasedPct,exposure:ps.exposure,priceFreq:null,
         yearBuilt:ps.yearBuilt,quality:null,distanceMi:distMi,totalUnits:ps.totalUnits}
@@ -25223,7 +25224,11 @@ function renderRanking(){
 
   // assemble rows per bedroom from comp data only (gross + NER from ApartmentIQ / HelloData)
   const byBed={}; COMP_BEDS.forEach(b=>byBed[b]=[]);
+  const _dealName=(DEALS.find(d=>d.id===DEAL_ID)||{}).name||'';
+  const _normN=s=>s.toLowerCase().replace(/[^a-z0-9]/g,'');
   state.comps.forEach(c=>{
+    // skip the subject property (tagged on upload, or matched by deal name)
+    if(c.isSubject||(_dealName&&_normN(c.name)===_normN(_dealName))) return;
     c.rows.forEach(r=>{
       const gross=compRowGross(r), ner=compRowNER(r), sf=num(r.sf);
       if(gross==null&&ner==null) return;

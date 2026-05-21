@@ -24856,6 +24856,63 @@ function rowToMonths(row){const o={};monthKeys.forEach((m,i)=>{o[m]=num(row[i+1]
       noi:{budget:noiMonths,actual:nullMonths()},noiAR:{budget:noiMonths,actual:nullMonths()},catByMonth}};
 }
 
+/* ============ Budget Import (RealPage Student) ============ */
+function parseStudentBudget(wb){
+  const SMONS=['aug','sep','oct','nov','dec','jan','feb','mar','apr','may','jun','jul'];
+  const MON_NUM={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  const snum=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?null:n;};
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+  let hdrRow=-1;
+  for(let i=0;i<15;i++) if(/account description/i.test(String((grid[i]||[])[0]||''))) {hdrRow=i;break;}
+  if(hdrRow<0) return {error:'Could not find Account Description header row in student budget'};
+  const hdr=(grid[hdrRow]||[]).map(v=>String(v||'').trim());
+  const monCol={},monYear={};
+  hdr.forEach((v,ci)=>{const m=v.match(/^([A-Za-z]{3})[- ](\d{4})$/i);if(m){const k=m[1].toLowerCase();if(SMONS.includes(k)&&monCol[k]==null){monCol[k]=ci;monYear[k]=parseInt(m[2]);}}});
+  const totalCol=hdr.findIndex(v=>/^total$/i.test(v));
+  if(!Object.keys(monCol).length) return {error:'Could not locate monthly budget columns in student budget'};
+  const findLast=re=>{let f=-1;for(let r=hdrRow+1;r<grid.length;r++)if(re.test(String((grid[r]||[])[0]||'').trim()))f=r;return f;};
+  const sline=re=>{const r=findLast(re);if(r<0)return null;const row=grid[r];const monthly={};SMONS.forEach(k=>{monthly[k]=monCol[k]!=null?snum(row[monCol[k]]):null;});return{row:r,fyBudget:totalCol>=0?snum(row[totalCol]):null,monthly,ytdActual:null,ytdBudget:null,ytdVar:null};};
+  const sumSlines=(...res)=>{const parts=res.map(re=>sline(re)).filter(Boolean);if(!parts.length)return null;const monthly={};SMONS.forEach(k=>{let s=0,any=false;parts.forEach(p=>{if(p.monthly[k]!=null){s+=p.monthly[k];any=true;}});monthly[k]=any?s:null;});return{monthly,fyBudget:parts.reduce((a,p)=>a+(p.fyBudget||0),0),ytdActual:null,ytdBudget:null,ytdVar:null};};
+  const headline={
+    totalIncome:sline(/^total income$/i),
+    totalOpEx:  sline(/^total expense$/i),
+    noi:        sline(/^total net operating income$/i),
+    noiAR:      sline(/^total net operating income$/i)
+  };
+  const repairs=sumSlines(/^service related expenses$/i,/^operating.*maintenance expenses$/i,/^maintenance.*repairs$/i);
+  const catLines={
+    '51599-099':sline(/^payroll.*related$/i),
+    '53999-099':repairs,
+    '54999-099':sline(/^marketing expenses$/i),
+    '58399-099':sline(/^administrative expenses$/i),
+    '59999-099':sline(/^utilities$/i),
+    '61999-099':sline(/^management fees$/i),
+    '62999-099':sline(/^taxes.*insurance$/i),
+    '63999-099':null
+  };
+  const mkSc=re=>{const l=sline(re);return{budget:l?l.monthly:null,actual:null};};
+  const scorecard={
+    income:mkSc(/^total income$/i),opex:mkSc(/^total expense$/i),
+    noi:mkSc(/^total net operating income$/i),noiAR:mkSc(/^total net operating income$/i),
+    catByMonth:{
+      '51599-099':{budget:catLines['51599-099']?.monthly??null,actual:null},
+      '53999-099':{budget:repairs?.monthly??null,actual:null},
+      '54999-099':{budget:catLines['54999-099']?.monthly??null,actual:null},
+      '58399-099':{budget:catLines['58399-099']?.monthly??null,actual:null},
+      '59999-099':{budget:catLines['59999-099']?.monthly??null,actual:null},
+      '61999-099':{budget:catLines['61999-099']?.monthly??null,actual:null},
+      '62999-099':{budget:catLines['62999-099']?.monthly??null,actual:null},
+      '63999-099':{budget:null,actual:null}
+    }
+  };
+  const now=new Date();
+  const closedMonths=SMONS.filter(m=>{const yr=monYear[m];if(!yr)return false;return new Date(yr,MON_NUM[m],0)<now;});
+  return{sheetName:wb.SheetNames[0],monthOrder:SMONS,closedMonths,
+    currentMonth:closedMonths.length?closedMonths[closedMonths.length-1]:null,
+    headline,catLines,scorecard,budgetType:'student'};
+}
+
 function handleBudgetFile(file){
   const reader=new FileReader();
   reader.onload=e=>{
@@ -24863,7 +24920,10 @@ function handleBudgetFile(file){
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
       const isRPM=wb.SheetNames.some(n=>/modeldetailview/i.test(n));
-const res=isRPM?parseRPMBudget(wb):parseBudget(wb);
+      const topText=(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''})
+        .slice(0,8).map(r=>String(r[0]||'')).join(' '));
+      const isStudent=!isRPM&&/realpage|budget year beginning/i.test(topText);
+      const res=isRPM?parseRPMBudget(wb):isStudent?parseStudentBudget(wb):parseBudget(wb);
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.budget=res;
       save();
@@ -24872,6 +24932,9 @@ const res=isRPM?parseRPMBudget(wb):parseBudget(wb);
       if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch(endpoint,{method:'POST',body:fd}).catch(()=>{});}
       if(isRPM){
         rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · 12-month budget for 2026. Month-by-month scorecard is in the Income tab.</div>`;
+      } else if(isStudent){
+        const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
+        rpt.innerHTML=`<div class="hint"><b>Student budget loaded.</b> RealPage format · budget year Aug ${monYear?.aug||''}–Jul · latest closed month: <b>${cm}</b>.</div>`;
       } else {
         const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
         rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · latest closed month: <b>${cm} 2026</b>. Current-month and YTD comparisons are below.</div>`;

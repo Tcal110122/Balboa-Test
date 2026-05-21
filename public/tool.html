@@ -23861,6 +23861,59 @@ const units=[]; let cur=null;
     reviewCount: clean.filter(u=>u.inplaceReview).length};
 }
 
+/* ============ OneSite Rent Roll Parser (Flaherty & Collins) ============ */
+function parseOneSiteRR(rows){
+  let asOf='';
+  for(let i=0;i<Math.min(10,rows.length)&&!asOf;i++){
+    for(const cell of (rows[i]||[])){
+      const m=String(cell||'').match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+      if(m){asOf=m[1];break;}
+    }
+  }
+  let hdrRow=-1;
+  for(let i=0;i<Math.min(15,rows.length);i++){
+    if(/^unit$/i.test(String(rows[i]?.[0]||''))&&/^floorplan$/i.test(String(rows[i]?.[2]||''))){hdrRow=i;break;}
+  }
+  if(hdrRow<0) return{units:[],asOf,dupCount:0,preleasedVacant:0,reviewCount:0};
+  const rawUnits=[]; let cur=null, inFuture=false;
+  for(let i=hdrRow+1;i<rows.length;i++){
+    const row=rows[i]||[];
+    const col0=String(row[0]||'').trim();
+    const col2=String(row[2]||'').trim();
+    const col17=String(row[17]||'').trim();
+    const col35=String(row[35]||'').trim().toLowerCase();
+    if(col0==='details'&&!col2) continue;
+    if(/^unit$/i.test(col0)&&/^floorplan$/i.test(col2)) continue;
+    if(col0&&col2){
+      cur={unit:col0,utype:col2,sqft:num(row[13]),status:col17,
+        name:String(row[19]||'').trim(),
+        moveIn:toISODate(row[23]),leaseExp:toISODate(row[29]),
+        market:num(row[32]),rentLines:[]};
+      inFuture=false; rawUnits.push(cur);
+    } else if(cur){
+      if(/pending renewal|applicant/i.test(col17)) inFuture=true;
+      if(!inFuture&&col35==='rent'){const v=num(row[42]);if(v!=null&&v>0)cur.rentLines.push(v);}
+    }
+  }
+  let preleasedVacant=0;
+  const units=rawUnits.map(u=>{
+    if(!u.utype||u.sqft==null) return null;
+    const isVac=!u.name||u.name.toUpperCase()==='VACANT';
+    const isPreLeased=/vacant-leased/i.test(u.status);
+    if(isPreLeased) preleasedVacant++;
+    let inplace=null, inplaceReview=false;
+    if(!isVac&&u.rentLines.length){
+      inplace=u.rentLines.reduce((a,b)=>a+b,0);
+      if(u.market&&(inplace<0.45*u.market||inplace>1.25*u.market)) inplaceReview=true;
+    }
+    return{unit:u.unit,utype:u.utype,sqft:u.sqft,tier:tierOfUnit(u.utype,u.sqft),
+      vacant:isVac,market:u.market,inplace,inplaceReview,fees:0,
+      leaseExp:u.leaseExp,moveIn:u.moveIn,name:u.name,
+      preLeased:isPreLeased,residentId:''};
+  }).filter(Boolean);
+  return{asOf,units,dupCount:0,preleasedVacant,reviewCount:units.filter(u=>u.inplaceReview).length};
+}
+
 function handleFile(file){
   const reader=new FileReader();
   reader.onload=e=>{
@@ -23869,9 +23922,14 @@ function handleFile(file){
       const wb=XLSX.read(data,{type:'array',cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
-      const parsed=parseRentRoll(rows);
+      // Detect format by scanning first 5 rows for "OneSite"
+      let fmt='yardi';
+      for(let i=0;i<Math.min(5,rows.length)&&fmt==='yardi';i++)
+        for(const cell of (rows[i]||[]))
+          if(/onesite/i.test(String(cell||''))){fmt='onesite';break;}
+      const parsed=fmt==='onesite'?parseOneSiteRR(rows):parseRentRoll(rows);
       if(!parsed.units.length){
-        showParseReport('<div class="hint warn"><b>No units found.</b> This doesn\'t look like a Yardi "Rent Roll with Lease Charges" export. Check that you exported the right report.</div>');
+        showParseReport('<div class="hint warn"><b>No units found.</b> Make sure this is a Yardi "Rent Roll with Lease Charges" or OneSite Rent Roll Detail export.</div>');
         return;
       }
       state.rrDate=parsed.asOf||today();

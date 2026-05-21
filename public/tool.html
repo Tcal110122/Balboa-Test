@@ -24479,17 +24479,24 @@ function parseHelloData(wb, windowChoice){
   }
   if(hdrRow<0) return {error:'Could not locate the property header row in the HelloData sheet.'};
   const hdr=grid[hdrRow]||[];
-  // property columns: include subject (between Property Name and Comps Avg), skip delta cols
+  // property columns: include subject, skip delta cols
   const propNameCi=hdr.findIndex(v=>/property name/i.test(String(v)));
   const compsAvgCi=hdr.findIndex(v=>/comps avg/i.test(String(v)));
+  // subject is the FIRST non-metadata column after the "Property Name" header
+  let subjectCi=-1;
+  if(propNameCi>=0&&compsAvgCi>=0){
+    for(let i=propNameCi+1;i<compsAvgCi;i++){
+      const s=String(hdr[i]||'').trim();
+      if(s&&!/property name|management|website/i.test(s)){subjectCi=i;break;}
+    }
+  }
   const propCols=[];
   hdr.forEach((v,ci)=>{
     const s=String(v||'').trim();
     if(!s) return;
     if(/property name|management|website/i.test(s)) return;
     if(/comps avg|^\$△|^%△|^△/i.test(s)) return;
-    const isSubjectCol=propNameCi>=0&&compsAvgCi>=0&&ci>propNameCi&&ci<compsAvgCi;
-    propCols.push({ci,name:s,isSubject:isSubjectCol});
+    propCols.push({ci,name:s,isSubject:ci===subjectCi});
   });
   // locate bedroom section headers down column 2 (index 1) or wherever labels sit
   const labelCol = hdr.findIndex(v=>/property name/i.test(String(v)));
@@ -25226,9 +25233,11 @@ function renderRanking(){
   // assemble rows per bedroom: comps + subject property (via ApartmentIQ/HelloData, not rent roll)
   const byBed={}; COMP_BEDS.forEach(b=>byBed[b]=[]);
   const _dealName=(DEALS.find(d=>d.id===DEAL_ID)||{}).name||'';
-  const _normN=s=>s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const _normN=s=>s.toLowerCase().replace(/apartments?|the |at |on |\s+/g,'').replace(/[^a-z0-9]/g,'');
+  const _dn=_normN(_dealName);
   state.comps.forEach(c=>{
-    const isSubject=c.isSubject||(_dealName&&_normN(c.name)===_normN(_dealName));
+    const _cn=_normN(c.name);
+    const isSubject=c.isSubject||(_dealName&&(_cn===_dn||_dn.includes(_cn)||_cn.includes(_dn)));
     c.rows.forEach(r=>{
       const gross=compRowGross(r), ner=compRowNER(r), sf=num(r.sf);
       if(gross==null&&ner==null) return;

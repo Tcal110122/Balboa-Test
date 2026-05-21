@@ -24473,19 +24473,21 @@ function parseHelloData(wb, windowChoice){
   for(let i=0;i<Math.min(12,grid.length);i++){
     const row=grid[i]||[];
     if(row.some(v=>/property name/i.test(String(v)))||
-       row.some(v=>/darby/i.test(String(v)))&&row.some(v=>/comps avg/i.test(String(v)))){
+       row.some(v=>/comps avg/i.test(String(v)))){
       hdrRow=i; break;
     }
   }
   if(hdrRow<0) return {error:'Could not locate the property header row in the HelloData sheet.'};
   const hdr=grid[hdrRow]||[];
-  // property columns: skip Darby (subject), Comps Avg, delta cols — keep real comp names
+  // property columns: skip subject (sits between Property Name and Comps Avg), delta cols
+  const propNameCi=hdr.findIndex(v=>/property name/i.test(String(v)));
+  const compsAvgCi=hdr.findIndex(v=>/comps avg/i.test(String(v)));
   const propCols=[];
   hdr.forEach((v,ci)=>{
     const s=String(v||'').trim();
     if(!s) return;
     if(/property name|management|website/i.test(s)) return;
-    if(/^darby/i.test(s)) return;            // subject — already tracked from rent roll
+    if(propNameCi>=0&&compsAvgCi>=0&&ci>propNameCi&&ci<compsAvgCi) return;
     if(/comps avg|^\$△|^%△|^△/i.test(s)) return;
     propCols.push({ci,name:s});
   });

@@ -628,7 +628,7 @@
       </div>
       <div class="card">
         <div class="card-hd">
-          <h2>Rent Growth — Darby vs. Comp Set</h2>
+          <h2>Rent Growth — <span id="growthDealName">Subject</span> vs. Comp Set</h2>
           <div style="display:flex;gap:8px;align-items:center">
             <label class="fld" style="flex-direction:row;align-items:center;gap:6px">
               <span style="text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink-faint)">Show</span>
@@ -25206,7 +25206,7 @@ function renderRanking(){
     const hi=Math.max(...vals), lo=Math.min(...vals);
     html+=`<div style="padding:6px 14px 2px;display:flex;align-items:baseline;gap:10px">
       <span style="font-weight:700;font-size:12.5px">${b}</span>
-      ${darbyRank>0?`<span class="muted" style="font-size:11.5px">Darby ranks
+      ${darbyRank>0?`<span class="muted" style="font-size:11.5px">${subjectDealName} ranks
         <b style="color:var(--accent)">#${darbyRank}</b> of ${rows.length}</span>`:''}
     </div>`;
     html+=`<table style="margin-bottom:10px"><thead><tr>
@@ -26420,10 +26420,13 @@ function renderCompTrend(S, cols){
       forward. Update the Comp Set tab before each rent-roll upload to build a true comp trend.</div>`;
 }
 
-// Rent growth: Darby market rent vs. comp set, period over period.
+// Rent growth: subject market rent vs. comp set, period over period.
 function renderGrowth(S, cols){
   const el=document.getElementById('trendGrowth');
-  // need at least 2 periods that have BOTH Darby market rent and comp data
+  const subjectName=(DEALS.find(d=>d.id===DEAL_ID)||{}).name||'Subject';
+  const gdn=document.getElementById('growthDealName');
+  if(gdn) gdn.textContent=subjectName;
+  // need at least 2 periods that have BOTH subject market rent and comp data
   const valid=S.filter(s=>s.avgMarket!=null&&s.compAvgGross!=null);
   if(valid.length<2){
     el.innerHTML=`<div class="empty" style="padding:20px">
@@ -26438,9 +26441,9 @@ function renderGrowth(S, cols){
   const scope=document.getElementById('growthScope').value;
   // four series available; core scope shows only the headline pair
   const allSeries=[
-    {key:'darbyMkt', label:'Darby Market Rent', get:s=>s.avgMarket, color:'var(--accent)', core:true},
+    {key:'darbyMkt', label:subjectName+' Market Rent', get:s=>s.avgMarket, color:'var(--accent)', core:true},
     {key:'compGross',label:'Comp Set Gross Rent', get:s=>s.compAvgGross, color:'var(--gold)', core:true},
-    {key:'darbyNer', label:'Darby In-Place Rent', get:s=>s.avgInplace, color:'#5b8db8', core:false},
+    {key:'darbyNer', label:subjectName+' In-Place Rent', get:s=>s.avgInplace, color:'#5b8db8', core:false},
     {key:'compNer',  label:'Comp Set Net Effective', get:s=>s.compAvgNer, color:'#a8443a', core:false}
   ];
   const series = scope==='core' ? allSeries.filter(s=>s.core) : allSeries;
@@ -26488,9 +26491,9 @@ function renderGrowth(S, cols){
     const cls=gap>=0?'delta-pos':'delta-neg';
     verdict=`<div style="padding:10px 14px;font-size:12px">
       Over ${valid.length} periods (${valid[0].rrDate} → ${valid[valid.length-1].rrDate}):
-      Darby market rent <b>${darbyG>=0?'+':''}${darbyG.toFixed(1)}%</b>,
+      ${subjectName} market rent <b>${darbyG>=0?'+':''}${darbyG.toFixed(1)}%</b>,
       comp set gross <b>${compG>=0?'+':''}${compG.toFixed(1)}%</b> —
-      <b class="${cls}">Darby is ${gap>=0?'outpacing':'trailing'} the comp set by
+      <b class="${cls}">${subjectName} is ${gap>=0?'outpacing':'trailing'} the comp set by
       ${Math.abs(gap).toFixed(1)} pts</b>.</div>`;
   }
   el.innerHTML=html+verdict+`<div style="padding:4px 14px 10px;font-size:11px" class="muted">

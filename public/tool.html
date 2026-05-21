@@ -225,7 +225,7 @@
   <button class="tab" data-tab="dashboard">Oversight Dashboard</button>
   <button class="tab" data-tab="comps" id="tabComps">Comp Set</button>
   <button class="tab" data-tab="preleasing" id="tabPreleasing" style="display:none">Pre-Leasing</button>
-  <button class="tab" data-tab="floorplans">Floorplan Pricing</button>
+  <button class="tab" data-tab="floorplans" id="tabFloorplans">Floorplan Pricing</button>
   <button class="tab" data-tab="renewals">Renewals &amp; Exposure</button>
   <button class="tab" data-tab="income">Income</button>
   <button class="tab" data-tab="units">Unit Detail</button>
@@ -23622,9 +23622,10 @@ function populateDealSwitcher(){
 function updateTabsForDeal(deal){
   const isStudent=deal?.type==='student';
   document.getElementById('tabComps').style.display=isStudent?'none':'';
+  document.getElementById('tabFloorplans').style.display=isStudent?'none':'';
   document.getElementById('tabPreleasing').style.display=isStudent?'':'none';
   const active=document.querySelector('.tab.active');
-  if(active&&((isStudent&&active.dataset.tab==='comps')||(!isStudent&&active.dataset.tab==='preleasing'))){
+  if(active&&((isStudent&&(active.dataset.tab==='comps'||active.dataset.tab==='floorplans'))||(!isStudent&&active.dataset.tab==='preleasing'))){
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
     document.querySelector('[data-tab="dashboard"]').classList.add('active');

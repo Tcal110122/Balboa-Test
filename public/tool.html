@@ -24633,7 +24633,7 @@ function parseApartmentIQ(wb){
   propRow.forEach((v,ci)=>{
     if(ci<=1) return;
     const name=String(v||'').trim();
-    if(!name||name===subjectName) return;
+    if(!name) return;
     compCols.push({ci,name});
   });
   if(!compCols.length) return {error:'No comp properties found in Market Survey'};

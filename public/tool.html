@@ -23616,7 +23616,7 @@ function updateDealHeader(){
   const shortName=deal?(deal.name.split(' ').slice(0,3).join(' ')):null;
   if(deal){
     nameEl.textContent=deal.name;
-    subEl.textContent=(deal.address||'')+(deal.unit_count?' · '+deal.unit_count+' units':'');
+    subEl.textContent=(deal.address||'')+(deal.unit_count?' · '+deal.unit_count+' units':'')+(deal.property_manager?' · '+deal.property_manager:'');
     document.title=deal.name+' — Balboa REP';
   } else {
     nameEl.textContent='— No property selected —';

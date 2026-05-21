@@ -24934,7 +24934,7 @@ function handleBudgetFile(file){
         rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · 12-month budget for 2026. Month-by-month scorecard is in the Income tab.</div>`;
       } else if(isStudent){
         const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
-        rpt.innerHTML=`<div class="hint"><b>Student budget loaded.</b> RealPage format · budget year Aug ${monYear?.aug||''}–Jul · latest closed month: <b>${cm}</b>.</div>`;
+        rpt.innerHTML=`<div class="hint"><b>Student budget loaded.</b> RealPage format · budget year Aug–Jul · latest closed month: <b>${cm}</b>.</div>`;
       } else {
         const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
         rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · latest closed month: <b>${cm} 2026</b>. Current-month and YTD comparisons are below.</div>`;

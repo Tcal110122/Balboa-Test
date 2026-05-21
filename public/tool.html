@@ -343,6 +343,11 @@
       <div class="card-bd" id="rankContainer"></div>
     </div>
 
+    <div class="card" id="leasingCard" style="display:none">
+      <div class="card-hd"><h2>Occupancy &amp; Leasing — <span id="leasingDealName">Subject</span> vs. Comp Set</h2></div>
+      <div class="card-bd" id="leasingContainer"></div>
+    </div>
+
     <div class="toolbar" style="margin-bottom:10px">
       <button class="btn subtle sm" id="toggleCompDetail">Manage comps &amp; performance data ▾</button>
       <span class="note muted" id="compDetailHint">Edit manual comps, remove comps, and view HelloData leased %/exposure here.</span>
@@ -24725,7 +24730,7 @@ function handleMarketFile(file){
         if(!res.count){ rpt.innerHTML='<div class="hint warn"><b>No comps found</b> in the ApartmentIQ report.</div>'; return; }
         const manual=state.comps.filter(c=>c.source!=='hellodata');
         state.comps=manual.concat(res.comps);
-        save(); renderComps(); renderDashboard();
+        save(); renderComps(); renderRanking(); renderLeasing(); renderDashboard();
         if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-apartmentiq',{method:'POST',body:fd}).catch(()=>{});}
         rpt.innerHTML=`<div class="hint"><b>ApartmentIQ imported.</b> Added <b>${res.count}</b> comp communities.${res.sfEnriched>0?' Square footage mapped for <b>'+res.sfEnriched+'</b> comp(s).':''} ${manual.length>0?'Your '+manual.length+' manually-entered comp(s) were kept.':''}</div>`;
       } else if(isRPM){
@@ -24734,7 +24739,7 @@ function handleMarketFile(file){
         if(!res.count){ rpt.innerHTML='<div class="hint warn"><b>No comps found</b> in the RPM market survey.</div>'; return; }
         const manual=state.comps.filter(c=>c.source!=='hellodata');
         state.comps=manual.concat(res.comps);
-        save(); renderComps(); renderDashboard();
+        save(); renderComps(); renderRanking(); renderLeasing(); renderDashboard();
         if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rpm',{method:'POST',body:fd}).catch(()=>{});}
         rpt.innerHTML=`<div class="hint"><b>RPM market survey imported.</b> Added <b>${res.count}</b> comp communities with 30/60/90-day windows.${manual.length>0?' Your '+manual.length+' manually-entered comp(s) were kept.':''}</div>`;
       } else {
@@ -24743,7 +24748,7 @@ function handleMarketFile(file){
         if(!res.count){ rpt.innerHTML='<div class="hint warn"><b>No comps found</b> in the market data file.</div>'; return; }
         const manual=state.comps.filter(c=>c.source!=='hellodata');
         state.comps=manual.concat(res.comps);
-        save(); renderComps(); renderDashboard();
+        save(); renderComps(); renderRanking(); renderLeasing(); renderDashboard();
         let concCount=0;
         res.comps.forEach(c=>c.rows.forEach(r=>{if(r.grossDirect!=null&&r.nerDirect!=null&&r.grossDirect-r.nerDirect>1) concCount++;}));
         if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-hellodata',{method:'POST',body:fd}).catch(()=>{});}
@@ -25300,6 +25305,57 @@ function renderRanking(){
   cont.innerHTML=html||'<div class="empty">Add comps or load a rent roll to see the ranking.</div>';
 }
 
+function renderLeasing(){
+  const card=document.getElementById('leasingCard');
+  const cont=document.getElementById('leasingContainer');
+  // build rows: only comps that have at least leasedPct or exposure
+  const rows=[];
+  const _dn2=(DEALS.find(d=>d.id===DEAL_ID)||{}).name||'';
+  const _nn=s=>s.toLowerCase().replace(/apartments?|the |at |on |\s+/g,'').replace(/[^a-z0-9]/g,'');
+  const _dn2n=_nn(_dn2);
+  state.comps.forEach(c=>{
+    const p=c.perf||{};
+    if(p.leasedPct==null&&p.exposure==null) return;
+    const isSubj=c.isSubject||(_dn2&&(_nn(c.name)===_dn2n||_dn2n.includes(_nn(c.name))||_nn(c.name).includes(_dn2n)));
+    rows.push({name:c.name,isSubject:isSubj,
+      leasedPct:p.leasedPct, occupancy:p.exposure!=null?1-p.exposure:null,
+      units:p.totalUnits, yearBuilt:p.yearBuilt, distanceMi:p.distanceMi});
+  });
+  if(!rows.length){ card.style.display='none'; return; }
+  card.style.display='block';
+  document.getElementById('leasingDealName').textContent=_dn2||'Subject';
+  // sort: subject first, then by leased % descending
+  rows.sort((a,b)=>{
+    if(a.isSubject&&!b.isSubject) return -1;
+    if(!a.isSubject&&b.isSubject) return 1;
+    return (b.leasedPct??-1)-(a.leasedPct??-1);
+  });
+  const pct=v=>v==null?'—':(v*100).toFixed(1)+'%';
+  const hasOcc=rows.some(r=>r.occupancy!=null);
+  const hasLeased=rows.some(r=>r.leasedPct!=null);
+  let html=`<table><thead><tr>
+    <th class="l">Community</th>
+    ${hasLeased?'<th>Leased %</th>':''}
+    ${hasOcc?'<th>Occupancy</th>':''}
+    <th>Units</th><th>Year Built</th><th>Distance</th>
+  </tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const leasedFlag=r.leasedPct!=null&&r.leasedPct<0.93;
+    const occFlag=r.occupancy!=null&&r.occupancy<0.93;
+    const rowStyle=r.isSubject?'background:var(--accent-soft);font-weight:700':'';
+    html+=`<tr style="${rowStyle}">
+      <td class="l">${r.isSubject?'▸ ':''}${r.name}</td>
+      ${hasLeased?`<td style="${leasedFlag?'color:var(--warn)':''}">${pct(r.leasedPct)}</td>`:''}
+      ${hasOcc?`<td style="${occFlag?'color:var(--warn)':''}">${pct(r.occupancy)}</td>`:''}
+      <td>${r.units==null?'—':Math.round(r.units).toLocaleString()}</td>
+      <td>${r.yearBuilt==null?'—':Math.round(r.yearBuilt)}</td>
+      <td>${r.distanceMi==null?'—':r.distanceMi.toFixed(2)+' mi'}</td>
+    </tr>`;
+  });
+  html+=`</tbody></table>`;
+  cont.innerHTML=html;
+}
+
 function renderComps(){
   const c=document.getElementById('compContainer'); c.innerHTML='';
   if(!state.comps.length){
@@ -25407,7 +25463,7 @@ function renderComps(){
     b.addEventListener('click',e=>{
       const ci=+e.target.dataset.del;
       if(confirm('Remove "'+state.comps[ci].name+'"?')){
-        state.comps.splice(ci,1); renderComps(); renderDashboard(); save();
+        state.comps.splice(ci,1); renderComps(); renderRanking(); renderLeasing(); renderDashboard(); save();
       }
     });
   });
@@ -26681,7 +26737,7 @@ document.querySelectorAll('.tab').forEach(t=>{
   });
 });
 
-function renderAll(){ renderDashboard(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); renderPreleasing(); }
+function renderAll(){ renderDashboard(); renderRanking(); renderLeasing(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); renderPreleasing(); }
 
 /* ============ Pre-Leasing ============ */
 function renderPreleasing(){
@@ -26754,7 +26810,7 @@ function revealCompDetail(){
   }
 }
 document.getElementById('addComp').addEventListener('click',()=>{
-  state.comps.push(blankComp());renderComps();renderDashboard();save();
+  state.comps.push(blankComp());renderComps();renderRanking();renderLeasing();renderDashboard();save();
   revealCompDetail();
 });
 document.getElementById('dealSwitcher').addEventListener('change',e=>{
@@ -26805,7 +26861,7 @@ document.getElementById('fpSort').addEventListener('change',renderFloorplans);
 document.getElementById('rankMetric').addEventListener('change',renderRanking);
 document.getElementById('compWindowSel').addEventListener('change',e=>{
   compWindow=e.target.value;
-  renderComps(); renderRanking(); renderDashboard();
+  renderComps(); renderRanking(); renderLeasing(); renderDashboard();
 });
 document.getElementById('growthMode').addEventListener('change',renderTrends);
 document.getElementById('growthScope').addEventListener('change',renderTrends);

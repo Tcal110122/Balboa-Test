@@ -23872,7 +23872,7 @@ function parseOneSiteRR(rows){
   }
   let hdrRow=-1;
   for(let i=0;i<Math.min(15,rows.length);i++){
-    if(/^unit$/i.test(String(rows[i]?.[0]||''))&&/^floorplan$/i.test(String(rows[i]?.[2]||''))){hdrRow=i;break;}
+    if(/unit/i.test(String(rows[i]?.[0]||''))&&/floorplan/i.test(String(rows[i]?.[2]||''))){hdrRow=i;break;}
   }
   if(hdrRow<0) return{units:[],asOf,dupCount:0,preleasedVacant:0,reviewCount:0};
   const rawUnits=[]; let cur=null, inFuture=false;

@@ -24479,7 +24479,7 @@ function parseHelloData(wb, windowChoice){
   }
   if(hdrRow<0) return {error:'Could not locate the property header row in the HelloData sheet.'};
   const hdr=grid[hdrRow]||[];
-  // property columns: skip subject (sits between Property Name and Comps Avg), delta cols
+  // property columns: include subject (between Property Name and Comps Avg), skip delta cols
   const propNameCi=hdr.findIndex(v=>/property name/i.test(String(v)));
   const compsAvgCi=hdr.findIndex(v=>/comps avg/i.test(String(v)));
   const propCols=[];
@@ -24487,9 +24487,9 @@ function parseHelloData(wb, windowChoice){
     const s=String(v||'').trim();
     if(!s) return;
     if(/property name|management|website/i.test(s)) return;
-    if(propNameCi>=0&&compsAvgCi>=0&&ci>propNameCi&&ci<compsAvgCi) return;
     if(/comps avg|^\$△|^%△|^△/i.test(s)) return;
-    propCols.push({ci,name:s});
+    const isSubjectCol=propNameCi>=0&&compsAvgCi>=0&&ci>propNameCi&&ci<compsAvgCi;
+    propCols.push({ci,name:s,isSubject:isSubjectCol});
   });
   // locate bedroom section headers down column 2 (index 1) or wherever labels sit
   const labelCol = hdr.findIndex(v=>/property name/i.test(String(v)));
@@ -24562,6 +24562,7 @@ function parseHelloData(wb, windowChoice){
         distance:dist!=null?dist.toFixed(2)+' mi':'',
         units:units!=null?String(Math.round(units)):'',
         source:'hellodata', hdWindow:win+'-day', rows:rows,
+        isSubject:!!pc.isSubject,
         sfMatched:!!ulData,
         perf:{
           leasedPct:mv('leasedPct'), exposure:mv('exposure'),

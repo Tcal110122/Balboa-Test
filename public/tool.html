@@ -701,6 +701,12 @@ function tierOf(sf){
   if(sf<=1310) return '2 Bedroom';
   return 'Large 2BR / 3BR';
 }
+const TIER_ALIASES={'studio':'Small (<=610 SF)','small':'Small (<=610 SF)','1br':'1 Bedroom','1bed':'1 Bedroom','2br':'2 Bedroom','2bed':'2 Bedroom','3br':'Large 2BR / 3BR','3bed':'Large 2BR / 3BR','large':'Large 2BR / 3BR'};
+function tierOfUnit(utype,sf){
+  const ov=(state.fpNames._tiers||{})[utype];
+  if(ov){const k=TIER_ALIASES[ov.toLowerCase().replace(/\s+/g,'')];if(k) return k;if(Object.values(TIER_ALIASES).includes(ov)) return ov;}
+  return tierOf(sf);
+}
 // map tier -> comp bedroom bucket
 const TIER_TO_BED = {
   'Small (<=610 SF)':'Studio / Small','1 Bedroom':'1 Bed',
@@ -23804,7 +23810,7 @@ const units=[]; let cur=null;
       } else { review=true; }
     }
     built.push({
-      unit:u.unit, utype:u.utype, sqft:u.sqft, tier:tierOf(u.sqft),
+      unit:u.unit, utype:u.utype, sqft:u.sqft, tier:tierOfUnit(u.utype,u.sqft),
       vacant:isVac, market:u.market,
       inplace: base, inplaceReview: review,
       fees:u.fees, leaseExp:u.leaseExp, moveIn:u.moveIn, moveOut:u.moveOut,
@@ -24701,13 +24707,16 @@ function handleFpMappingFile(file){
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
-      const map={};
+      const map={},tiers={};
       rows.forEach(row=>{
         const code=String(row[0]||'').trim();
         const name=String(row[1]||'').trim();
+        const tier=String(row[2]||'').trim();
         if(code&&name) map[code]=name;
+        if(code&&tier) tiers[code]=tier;
       });
-      const count=Object.keys(map).length;
+      if(Object.keys(tiers).length) map._tiers=tiers;
+      const count=Object.keys(map).filter(k=>k!=='_tiers').length;
       if(!count){rpt.textContent='No mappings found — check file format (col A: code, col B: name).';return;}
       state.fpNames=map;
       save();

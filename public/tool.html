@@ -23604,6 +23604,21 @@ async function loadDealData(dealId){
     if(budRes.ok){ const d=await budRes.json(); if(d.data) state.budget=d.data; }
     if(compRes.ok){ const d=await compRes.json(); if(d.comps&&d.comps.length) state.comps=d.comps; }
     if(fpRes.ok){ const d=await fpRes.json(); if(d.data&&Object.keys(d.data).length) state.fpNames=d.data; }
+    // Populate historical snapshots from Supabase for users without localStorage data
+    try{
+      const histRes=await fetch('/api/rentroll-history?deal_id='+dealId);
+      if(histRes.ok){
+        const hist=await histRes.json();
+        if(hist.length){
+          const existingDates=new Set(state.snapshots.map(s=>s.rrDate));
+          hist.forEach(h=>{
+            if(!existingDates.has(h.as_of_date))
+              state.snapshots.push(buildSnapshotFromRaw(h.units,h.as_of_date));
+          });
+          state.snapshots.sort((a,b)=>(b.rrDate||'').localeCompare(a.rrDate||''));
+        }
+      }
+    }catch(e){}
     applyTierOverrides();
     const deal=DEALS.find(d=>d.id===dealId);
     if(deal?.type==='student'){
@@ -26348,6 +26363,64 @@ function buildSnapshot(){
     compCount:state.comps.length, byTier:byTier, byType:byType,
     compByBed:compByBed, hasCompData:hasCompData, compSnap:compSnap,
     compAvgGross:compAvgGross, compAvgNer:compAvgNer,
+    units:unitSlice
+  };
+}
+// Rebuild a snapshot from raw units (as stored in Supabase) without needing
+// full app state. Used when populating state.snapshots for non-uploading users.
+function buildSnapshotFromRaw(units, asOfDate){
+  const occUnits=units.filter(u=>!u.vacant);
+  const allMarket=units.filter(u=>u.market!=null).map(u=>u.market);
+  const allInplace=occUnits.filter(u=>u.inplace!=null).map(u=>u.inplace);
+  const avgMK=avg(allMarket), avgIP=avg(allInplace);
+  const gpr=units.reduce((s,u)=>s+(u.market||0),0);
+  const inplaceRevenue=allInplace.reduce((a,b)=>a+b,0);
+  const exp=expiryByMonth(units);
+  const fwd12=forwardExpiry(exp,asOfDate,12);
+  const byTier={};
+  TIERS.forEach(t=>{
+    const tu=units.filter(u=>u.tier===t);
+    if(!tu.length) return;
+    const vac=tu.filter(u=>u.vacant).length;
+    const ip=tu.filter(u=>!u.vacant&&u.inplace!=null).map(u=>u.inplace);
+    const mk=tu.filter(u=>u.market!=null).map(u=>u.market);
+    const aIP=avg(ip), aMK=avg(mk);
+    byTier[t]={units:tu.length,vac,occRate:tu.length?(tu.length-vac)/tu.length*100:0,
+      inplace:aIP,market:aMK,ltl:(aIP!=null&&aMK!=null)?aMK-aIP:null,compNE:null};
+  });
+  const byType={};
+  units.forEach(u=>{
+    const k=u.utype||'(none)';
+    if(!byType[k]) byType[k]={code:k,tier:u.tier,units:0,vac:0,_sf:[],_ip:[],_mk:[]};
+    const d=byType[k]; d.units++;
+    if(u.vacant) d.vac++;
+    if(u.sqft!=null) d._sf.push(u.sqft);
+    if(u.market!=null) d._mk.push(u.market);
+    if(!u.vacant&&u.inplace!=null) d._ip.push(u.inplace);
+  });
+  Object.values(byType).forEach(d=>{
+    d.sqft=avg(d._sf); d.inplace=avg(d._ip); d.market=avg(d._mk);
+    d.ltl=(d.inplace!=null&&d.market!=null)?d.market-d.inplace:null;
+    d.occRate=d.units?(d.units-d.vac)/d.units*100:0;
+    delete d._sf; delete d._ip; delete d._mk;
+  });
+  const unitSlice=units.map(u=>({
+    unit:u.unit,tier:u.tier,vacant:u.vacant,
+    leaseExp:u.leaseExp||'',residentId:u.residentId||'',
+    inplace:u.inplace,market:u.market,moveOut:u.moveOut||''
+  }));
+  return{
+    id:uid(),rrDate:asOfDate,savedAt:new Date().toISOString(),
+    totalUnits:units.length,occUnits:occUnits.length,
+    occRate:units.length?occUnits.length/units.length*100:0,
+    avgMarket:avgMK,avgInplace:avgIP,
+    ltlPerUnit:(avgMK!=null&&avgIP!=null)?avgMK-avgIP:null,
+    gpr,inplaceRevenue,
+    economicOcc:gpr>0?inplaceRevenue/gpr*100:null,
+    fwd12Units:fwd12.n,fwd12Mkt:fwd12.mkt,
+    fwd12PctGPR:gpr>0?fwd12.mkt/gpr*100:null,
+    compCount:0,byTier,byType,
+    compByBed:{},hasCompData:false,compSnap:[],compAvgGross:null,compAvgNer:null,
     units:unitSlice
   };
 }

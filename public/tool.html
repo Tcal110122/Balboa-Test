@@ -25589,11 +25589,25 @@ function renderIncome(){
     const t12Year=t12Years[t12Years.length-1]||'2026';
     const t12MonIdx={};   // 'jan' -> column index in t.months
     if(t&&t.months){
-      t.months.forEach((mo,i)=>{
-        const lab=String(mo.label||'').toLowerCase();
-        const mm=lab.slice(0,3);
-        if(lab.includes(t12Year) && MORDER.indexOf(mm)>=0) t12MonIdx[mm]=i;
-      });
+      if(b.budgetType==='student'){
+        // Student fiscal year Aug–Jul spans two calendar years.
+        // t12Year is the most recent year (e.g. 2026); Aug–Dec belong to t12Year-1.
+        const prevYear=String(parseInt(t12Year)-1);
+        const stuYrMap={aug:prevYear,sep:prevYear,oct:prevYear,nov:prevYear,dec:prevYear,
+                        jan:t12Year,feb:t12Year,mar:t12Year,apr:t12Year,may:t12Year,jun:t12Year,jul:t12Year};
+        t.months.forEach((mo,i)=>{
+          const lab=String(mo.label||'').toLowerCase();
+          const mm=lab.slice(0,3);
+          const yr=stuYrMap[mm];
+          if(yr&&lab.includes(yr)&&MORDER.indexOf(mm)>=0) t12MonIdx[mm]=i;
+        });
+      } else {
+        t.months.forEach((mo,i)=>{
+          const lab=String(mo.label||'').toLowerCase();
+          const mm=lab.slice(0,3);
+          if(lab.includes(t12Year)&&MORDER.indexOf(mm)>=0) t12MonIdx[mm]=i;
+        });
+      }
     }
     const t12MonthsCovered=Object.keys(t12MonIdx);
     // resolve a headline line's actual for a given month — strictly from the T-12.
@@ -25623,8 +25637,9 @@ function renderIncome(){
     // entirely — the T-12 is the single source of truth for what is actual.
     const monthAvailable=(mon)=> t12MonIdx[mon]!=null;
 
-    // ---- 2026 Monthly Scorecard: actual vs budget, row per month ----
-    html+=`<div class="card"><div class="card-hd"><h2>2026 Monthly Scorecard — Actual vs. Budget</h2>
+    // ---- Monthly Scorecard: actual vs budget, row per month ----
+    const fyLabel=b.budgetType==='student'?`FY${String(parseInt(t12Year)-1).slice(2)}–${String(t12Year).slice(2)}`:'2026';
+    html+=`<div class="card"><div class="card-hd"><h2>${fyLabel} Monthly Scorecard — Actual vs. Budget</h2>
       <span class="note">${t12MonthsCovered.length?'Actuals through '+MONFULL[t12MonthsCovered[t12MonthsCovered.length-1]]+' (from the T-12)':'Each month fills in as it is closed'}</span></div>
       <div class="card-bd">`;
     const sc=b.scorecard;
@@ -25713,7 +25728,7 @@ function renderIncome(){
       {label:'NOI After Replacements',key:'noiAR',favLow:false,bold:true}
     ];
     const cm=b.currentMonth;
-    const cmLabel=cm?(MONFULL[cm]||cm)+' 2026':'current month';
+    const cmLabel=cm?(MONFULL[cm]||cm)+' '+fyLabel:'current month';
 
     // ---- 2026 YTD vs budget — endpoint selectable, defaults to latest available month ----
     // available months = those with actuals (T-12 covered or budget-closed)
@@ -25724,7 +25739,7 @@ function renderIncome(){
     const ytdEndIdx=MORDER.indexOf(ytdEnd);
     const ytdWin=MORDER.slice(0,ytdEndIdx+1);
     const ytdOpts=availMonths.length
-      ? availMonths.map(k=>`<option value="${k}"${k===ytdEnd?' selected':''}>through ${MONFULL[k]} 2026</option>`).join('')
+      ? availMonths.map(k=>`<option value="${k}"${k===ytdEnd?' selected':''}>through ${MONFULL[k]} ${fyLabel}</option>`).join('')
       : `<option>no closed months</option>`;
     // sum a per-month budget series and merged actuals over the YTD window
     const ytdBudget=(series)=>{
@@ -25764,11 +25779,11 @@ function renderIncome(){
     });
     html+=`</tbody></table>
       <div style="font-size:10.5px;padding:6px 10px" class="muted">
-        YTD = January through ${MONFULL[ytdEnd]} 2026. Actuals are taken from the T-12;
+        YTD = ${b.budgetType==='student'?'August':'January'} through ${MONFULL[ytdEnd]} ${fyLabel}. Actuals are taken from the T-12;
         a month is included once the T-12 covers it.</div></div></div>`;
 
     // ---- YTD expense detail vs budget, by category (same endpoint) ----
-    html+=`<div class="card"><div class="card-hd"><h2>2026 YTD Expense Detail vs. Budget</h2>
+    html+=`<div class="card"><div class="card-hd"><h2>${fyLabel} YTD Expense Detail vs. Budget</h2>
       <span class="note">By category, through ${MONFULL[ytdEnd]} — under-budget reads green</span></div>
       <div class="card-bd"><table><thead><tr>
         <th class="l">Category</th><th>YTD Actual</th><th>YTD Budget</th>

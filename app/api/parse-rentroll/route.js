@@ -20,13 +20,11 @@ function detectFormat(buffer) {
     }
   }
 
-  // Column-pattern detection: Entrata has a single header row with Unit + Status + a rent column
-  for (let i = 0; i < Math.min(20, grid.length); i++) {
-    const row = (grid[i] || []).map(v => String(v || '').toLowerCase().trim())
-    const hasUnit   = row.some(v => /^unit\s*#?$|^unit\s*number$/.test(v))
-    const hasStatus = row.some(v => /^status$/.test(v))
-    const hasRent   = row.some(v => /rent|market/.test(v))
-    if (hasUnit && hasStatus && hasRent) return 'entrata'
+  // Entrata column-pattern: a row with "Bldg-Unit"/"Unit" in col A and "SQFT" in col B
+  for (let i = 0; i < Math.min(10, grid.length); i++) {
+    const row = grid[i] || []
+    if (/bldg.?unit|^unit$/i.test(String(row[0] || '')) &&
+        /^sqft$|^sq\.?\s*ft/i.test(String(row[1] || ''))) return 'entrata'
   }
 
   return 'yardi'

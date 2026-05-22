@@ -23931,57 +23931,53 @@ function parseOneSiteRR(rows){
 
 /* ============ Entrata Rent Roll Parser ============ */
 function parseEntrataRR(rows){
-  const snum=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/[$,]/g,''));return isNaN(n)?null:n;};
+  const MON_MAP={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
   let asOf='';
-  for(let i=0;i<Math.min(8,rows.length)&&!asOf;i++)
-    for(const cell of (rows[i]||[])){
-      if(cell instanceof Date&&!isNaN(cell)){asOf=toISODate(cell);break;}
-      const m=String(cell||'').match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);if(m){asOf=m[1];break;}
-    }
+  for(let i=0;i<Math.min(6,rows.length)&&!asOf;i++){
+    const s=String(rows[i]?.[0]||'').trim();
+    const m=s.match(/^([A-Za-z]{3,})\s+(\d{4})$/);
+    if(m){const mo=MON_MAP[m[1].toLowerCase().slice(0,3)];if(mo){asOf=m[2]+'-'+mo+'-01';break;}}
+    const m2=s.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);if(m2){asOf=m2[1];break;}
+  }
   let hdrRow=-1;
-  for(let i=0;i<Math.min(20,rows.length);i++){
-    const row=(rows[i]||[]).map(v=>String(v||'').trim());
-    if(row.some(v=>/^unit\s*#?$|^unit\s*number$/i.test(v))&&row.some(v=>/rent|charge|market/i.test(v))){hdrRow=i;break;}
+  for(let i=0;i<Math.min(10,rows.length);i++){
+    const row=rows[i]||[];
+    if(/bldg.?unit|^unit$/i.test(String(row[0]||''))&&/^sqft$|^sq\.?\s*ft/i.test(String(row[1]||''))){hdrRow=i;break;}
   }
   if(hdrRow<0) return{units:[],asOf,dupCount:0,preleasedVacant:0,reviewCount:0,skipped:0};
   const hdr=(rows[hdrRow]||[]).map(v=>String(v||'').toLowerCase().trim());
-  const col=re=>hdr.findIndex(v=>re.test(v));
-  const cUnit=col(/^unit\s*#?$|^unit\s*number$/);
-  const cType=col(/^(unit\s+)?type$|^floor\s*plan$/);
-  const cSqft=col(/^sq\.?\s*ft\.?$|^sqft$|^size(\s*\(sf\))?$/);
-  const cStatus=col(/^status$/);
-  const cName=col(/^(resident\s+)?name$|^resident$|^tenant$/);
-  const cMoveIn=col(/^move[\s-]?in(\s+date)?$/);
-  const cLeaseEnd=col(/^lease\s*(end|exp\b|expir)/);
-  const cMarket=col(/^market\s*rent$|^market$/);
-  let cRent=col(/^lease\s+rent$/);
-  if(cRent<0) cRent=col(/^current\s+rent$/);
-  if(cRent<0) cRent=col(/^scheduled\s+(rent|charges?)$/);
-  if(cRent<0) cRent=col(/^contract\s+rent$/);
-  if(cRent<0) cRent=col(/^rent$/);
-  const units=[];
+  const fc=re=>hdr.findIndex(v=>re.test(v));
+  const cSqft=fc(/^sqft$|^sq\.?\s*ft/),cStatus=fc(/unit status|^status$/),cRes=fc(/^resident$|^name$/);
+  const cMoveIn=fc(/^move.?in/),cLeaseEnd=fc(/^lease end|^lease expir/),cMarket=fc(/^market rent$/),cSched=fc(/^scheduled charges?$/);
+  const today=new Date();
+  const allBeds=[];let curType='';
   for(let r=hdrRow+1;r<rows.length;r++){
     const row=rows[r]||[];
-    const unitId=String(row[cUnit]||'').trim();
-    if(!unitId||/^total|^grand\s*total/i.test(unitId)) continue;
-    const utype=cType>=0?String(row[cType]||'').trim():''; if(!utype) continue;
-    const sqft=cSqft>=0?snum(row[cSqft]):null;
-    const statusRaw=cStatus>=0?String(row[cStatus]||'').trim():'';
-    const name=cName>=0?String(row[cName]||'').trim():'';
-    const market=cMarket>=0?snum(row[cMarket]):null;
-    const rent=cRent>=0?snum(row[cRent]):null;
+    const cellA=String(row[0]||'').trim();
+    if(/^unit type:/i.test(cellA)){curType=cellA.replace(/^unit type:\s*/i,'').trim();continue;}
+    if(!cellA||/total:?\s*$/i.test(cellA)) continue;
     const moveIn=cMoveIn>=0?toISODate(row[cMoveIn]):'';
-    const leaseEnd=cLeaseEnd>=0?toISODate(row[cLeaseEnd]):'';
-    const isVacant=/^(vacant|available|down|model|admin|notice)/i.test(statusRaw)||!name||name.toUpperCase()==='VACANT';
-    const isPreLeased=/pre.?leas/i.test(statusRaw);
-    const inplace=isVacant?null:rent;
-    const inplaceReview=!isVacant&&inplace==null;
-    units.push({unit:unitId,utype,sqft,tier:tierOfUnit(utype,sqft),
-      vacant:isVacant,preLeased:isVacant&&isPreLeased,
-      market,inplace,inplaceReview,fees:0,
-      leaseExp:leaseEnd,moveIn,name:isVacant?'VACANT':name,residentId:''});
+    const moveInDate=moveIn?new Date(moveIn+'T12:00:00'):null;
+    const isFuture=!!(moveInDate&&moveInDate>today);
+    allBeds.push({bed:cellA,utype:curType,sqft:cSqft>=0?num(row[cSqft]):null,
+      status:cStatus>=0?String(row[cStatus]||'').trim():'',
+      resident:cRes>=0?String(row[cRes]||'').trim():'',
+      moveIn,leaseEnd:cLeaseEnd>=0?toISODate(row[cLeaseEnd]):'',
+      market:cMarket>=0?num(row[cMarket]):null,sched:cSched>=0?num(row[cSched]):null,isFuture});
   }
-  const preleasedVacant=units.filter(u=>u.vacant&&u.preLeased).length;
+  const futureByBed=new Set(allBeds.filter(b=>b.isFuture).map(b=>b.bed));
+  const byBed={};
+  allBeds.filter(b=>!b.isFuture).forEach(b=>{if(!byBed[b.bed])byBed[b.bed]=b;});
+  let preleasedVacant=0;
+  const units=Object.values(byBed).map(b=>{
+    const isVacant=/^vacant/i.test(b.status)||!b.resident;
+    const isPreLeased=isVacant&&(futureByBed.has(b.bed)||/rented/i.test(b.status));
+    if(isVacant&&isPreLeased) preleasedVacant++;
+    const inplace=isVacant?null:b.sched;
+    return{unit:b.bed,utype:b.utype,sqft:b.sqft,tier:tierOfUnit(b.utype,b.sqft),
+      vacant:isVacant,preLeased:isPreLeased,market:b.market,inplace,inplaceReview:!isVacant&&inplace==null,fees:0,
+      leaseExp:b.leaseEnd,moveIn:b.moveIn,name:isVacant?'VACANT':b.resident,residentId:''};
+  });
   return{asOf,units,skipped:0,dupCount:0,preleasedVacant,reviewCount:units.filter(u=>u.inplaceReview).length};
 }
 

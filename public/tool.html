@@ -23983,14 +23983,23 @@ function handleFile(file){
       const wb=XLSX.read(data,{type:'array',cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
-      // Detect format by scanning first 8 rows
+      // Detect format: brand-name scan first, then column-pattern fallback
       let fmt='yardi';
-      for(let i=0;i<Math.min(8,rows.length)&&fmt==='yardi';i++)
+      for(let i=0;i<Math.min(20,rows.length)&&fmt==='yardi';i++)
         for(const cell of (rows[i]||[])){
           const s=String(cell||'');
           if(/onesite/i.test(s)){fmt='onesite';break;}
           if(/entrata/i.test(s)){fmt='entrata';break;}
         }
+      if(fmt==='yardi'){
+        // Entrata column-pattern: single header row with Unit + Status + rent/market
+        for(let i=0;i<Math.min(20,rows.length);i++){
+          const row=(rows[i]||[]).map(v=>String(v||'').toLowerCase().trim());
+          if(row.some(v=>/^unit\s*#?$|^unit\s*number$/.test(v))&&
+             row.some(v=>/^status$/.test(v))&&
+             row.some(v=>/rent|market/.test(v))){fmt='entrata';break;}
+        }
+      }
       const parsed=fmt==='onesite'?parseOneSiteRR(rows):fmt==='entrata'?parseEntrataRR(rows):parseRentRoll(rows);
       if(!parsed.units.length){
         showParseReport('<div class="hint warn"><b>No units found.</b> Make sure this is a Yardi, OneSite, or Entrata rent roll export.</div>');

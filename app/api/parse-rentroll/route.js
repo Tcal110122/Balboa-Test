@@ -7,9 +7,11 @@ import supabase from '@/lib/supabase'
 import { requireAuth, canAccessDeal } from '@/lib/auth'
 
 function detectFormat(buffer) {
-  const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 8 })
+  const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 20 })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+  // Brand-name detection
   for (const row of grid) {
     for (const cell of row) {
       const s = String(cell)
@@ -17,6 +19,16 @@ function detectFormat(buffer) {
       if (/entrata/i.test(s)) return 'entrata'
     }
   }
+
+  // Column-pattern detection: Entrata has a single header row with Unit + Status + a rent column
+  for (let i = 0; i < Math.min(20, grid.length); i++) {
+    const row = (grid[i] || []).map(v => String(v || '').toLowerCase().trim())
+    const hasUnit   = row.some(v => /^unit\s*#?$|^unit\s*number$/.test(v))
+    const hasStatus = row.some(v => /^status$/.test(v))
+    const hasRent   = row.some(v => /rent|market/.test(v))
+    if (hasUnit && hasStatus && hasRent) return 'entrata'
+  }
+
   return 'yardi'
 }
 

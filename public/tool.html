@@ -23802,7 +23802,7 @@ const units=[]; let cur=null;
       const code=G==null?'':String(G).trim().toLowerCase();
       const amt=num(H);
       if(code==='total'&&amt!=null) cur.total=amt;
-      else if(code==='rent'&&amt!=null) cur.rentlines.push(amt);
+      else if(/^(base\s*)?rent$|^lease\s+rent$|^contract\s+rent$|^unit\s+rent$/.test(code)&&amt!=null) cur.rentlines.push(amt);
       else if(FEE_CODES.has(code)&&amt!=null) cur.fees+=amt;
     }
   }

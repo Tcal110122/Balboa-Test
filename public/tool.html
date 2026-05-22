@@ -23955,6 +23955,7 @@ function parseEntrataRR(rows){
     const row=rows[r]||[];
     const cellA=String(row[0]||'').trim();
     if(/^unit type:/i.test(cellA)){curType=cellA.replace(/^unit type:\s*/i,'').trim();continue;}
+    if(/summary/i.test(cellA)) break;
     if(!cellA||/total:?\s*$/i.test(cellA)) continue;
     const moveIn=cMoveIn>=0?toISODate(row[cMoveIn]):'';
     const moveInDate=moveIn?new Date(moveIn+'T12:00:00'):null;

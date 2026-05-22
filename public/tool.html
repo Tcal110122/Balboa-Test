@@ -23999,12 +23999,9 @@ function handleFile(file){
           if(/entrata/i.test(s)){fmt='entrata';break;}
         }
       if(fmt==='yardi'){
-        // Entrata column-pattern: single header row with Unit + Status + rent/market
-        for(let i=0;i<Math.min(20,rows.length);i++){
-          const row=(rows[i]||[]).map(v=>String(v||'').toLowerCase().trim());
-          if(row.some(v=>/^unit\s*#?$|^unit\s*number$/.test(v))&&
-             row.some(v=>/^status$/.test(v))&&
-             row.some(v=>/rent|market/.test(v))){fmt='entrata';break;}
+        for(let i=0;i<Math.min(10,rows.length);i++){
+          const row=rows[i]||[];
+          if(/bldg.?unit|^unit$/i.test(String(row[0]||''))&&/^sqft$|^sq\.?\s*ft/i.test(String(row[1]||''))){fmt='entrata';break;}
         }
       }
       const parsed=fmt==='onesite'?parseOneSiteRR(rows):fmt==='entrata'?parseEntrataRR(rows):parseRentRoll(rows);

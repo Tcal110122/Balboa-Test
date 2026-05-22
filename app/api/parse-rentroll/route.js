@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server'
 import { parseRentRoll } from '@/lib/rentroll-parser'
 import { parseOneSiteRR } from '@/lib/onesite-rr-parser'
+import { parseEntrataRR } from '@/lib/entrata-rr-parser'
 import * as XLSX from 'xlsx'
 import supabase from '@/lib/supabase'
 import { requireAuth, canAccessDeal } from '@/lib/auth'
 
 function detectFormat(buffer) {
-  const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 5 })
+  const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 8 })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
   for (const row of grid) {
     for (const cell of row) {
-      if (/onesite/i.test(String(cell))) return 'onesite'
+      const s = String(cell)
+      if (/onesite/i.test(s)) return 'onesite'
+      if (/entrata/i.test(s)) return 'entrata'
     }
   }
   return 'yardi'
@@ -32,12 +35,14 @@ export async function POST(request) {
 
     const buffer = Buffer.from(await file.arrayBuffer())
     const format = detectFormat(buffer)
-    const parsed = format === 'onesite' ? parseOneSiteRR(buffer) : parseRentRoll(buffer)
+    const parsed = format === 'onesite' ? parseOneSiteRR(buffer)
+                 : format === 'entrata' ? parseEntrataRR(buffer)
+                 : parseRentRoll(buffer)
 
     if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
     if (!parsed.units?.length) {
       return NextResponse.json(
-        { error: 'No units found. Make sure this is a Yardi or OneSite rent roll export.' },
+        { error: 'No units found. Make sure this is a Yardi, OneSite, or Entrata rent roll export.' },
         { status: 400 }
       )
     }

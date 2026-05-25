@@ -8,11 +8,12 @@ const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : nu
 const money = v => v == null ? 'N/A' : '$' + Math.round(v).toLocaleString()
 const pct = v => v == null ? 'N/A' : v.toFixed(1) + '%'
 
-function buildSystemPrompt(dealName, dealType, rr, t12, budget) {
+function buildSystemPrompt(dealName, dealType, rr, t12, budget, compData) {
   const lines = [
     `You are a real estate asset management AI assistant for the property "${dealName}" (type: ${dealType || 'conventional'}).`,
     `Answer questions using the data provided. Be concise and precise. Never fabricate numbers.`,
     `Format currency as dollars. Today's date: ${new Date().toISOString().slice(0, 10)}.`,
+    `Data available: Rent Roll${t12 ? ', T-12' : ''}${budget ? ', Budget' : ''}${compData?.comps?.length ? ', Comp Set' : ''}.`,
     '',
     '## RENT ROLL DATA',
   ]
@@ -71,6 +72,58 @@ function buildSystemPrompt(dealName, dealType, rr, t12, budget) {
     }
   }
 
+  if (compData?.comps?.length) {
+    lines.push('\n## COMP SET')
+    lines.push(`${compData.comps.length} comparable communities:`)
+    compData.comps.forEach(c => {
+      const distStr = c.distance != null ? ` (${Number(c.distance).toFixed(1)} mi)` : ''
+      const unitsStr = c.units ? `, ${c.units} units` : ''
+      const leasedStr = c.perf?.leasedPct != null ? `, ${pct(c.perf.leasedPct * 100)} leased` : ''
+      lines.push(`  ${c.name}${distStr}${unitsStr}${leasedStr}`)
+      // Bed-type rows
+      if (c.rows?.length) {
+        const byBed = {}
+        c.rows.forEach(r => {
+          if (!r.bed) return
+          if (!byBed[r.bed]) byBed[r.bed] = { asking: [], ner: [] }
+          if (r.asking != null) byBed[r.bed].asking.push(r.asking)
+          const ne = r.netEffective ?? r.nerDirect ?? r.ner
+          if (ne != null) byBed[r.bed].ner.push(ne)
+        })
+        Object.entries(byBed).forEach(([bed, d]) => {
+          const askAvg = d.asking.length ? avg(d.asking) : null
+          const nerAvg = d.ner.length ? avg(d.ner) : null
+          lines.push(`    ${bed}: asking ${money(askAvg)}${nerAvg != null ? `, NER ${money(nerAvg)}` : ''}`)
+        })
+      }
+    })
+    // Subject vs comp averages by bed if rent roll available
+    if (rr?.units?.length) {
+      const beds = {}
+      rr.units.forEach(u => {
+        const tier = u.tier || 'Unknown'
+        if (!beds[tier]) beds[tier] = { ip: [], mk: [] }
+        if (u.market != null) beds[tier].mk.push(u.market)
+        if (!u.vacant && u.inplace != null) beds[tier].ip.push(u.inplace)
+      })
+      lines.push('  Subject property by tier vs comp asking averages:')
+      Object.entries(beds).forEach(([tier, d]) => {
+        const subIP = avg(d.ip), subMK = avg(d.mk)
+        // find matching comp bed
+        const bedKey = tier.match(/studio/i) ? 'Studio' : tier.match(/1/i) ? '1BR' : tier.match(/2/i) ? '2BR' : tier.match(/3/i) ? '3BR' : null
+        let compAsk = null
+        if (bedKey) {
+          const vals = []
+          compData.comps.forEach(c => (c.rows || []).forEach(r => {
+            if (r.bed && r.bed.includes(bedKey.replace('BR', '')) && r.asking != null) vals.push(r.asking)
+          }))
+          compAsk = vals.length ? avg(vals) : null
+        }
+        lines.push(`    ${tier}: subject in-place ${money(subIP)}, market ${money(subMK)}${compAsk != null ? `, comp avg asking ${money(compAsk)}, spread ${money((subMK ?? 0) - compAsk)}` : ''}`)
+      })
+    }
+  }
+
   return lines.join('\n')
 }
 
@@ -85,19 +138,20 @@ export async function POST(request) {
   if (!dealId || !messages?.length) return new Response('Bad request', { status: 400 })
   if (!canAccessDeal(auth, dealId)) return new Response('Forbidden', { status: 403 })
 
-  const [rrRow, t12Row, budRow] = await Promise.all([
+  const [rrRow, t12Row, budRow, compRow] = await Promise.all([
     supabase.from('rent_roll_snapshots').select('as_of_date, units').eq('deal_id', dealId).order('as_of_date', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('t12_snapshots').select('period, data').eq('deal_id', dealId).order('parsed_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('budget_snapshots').select('data').eq('deal_id', dealId).order('parsed_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('comp_snapshots').select('comps').eq('deal_id', dealId).order('imported_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const systemPrompt = buildSystemPrompt(dealName || 'this property', dealType || 'conventional', rrRow.data, t12Row.data, budRow.data)
+  const systemPrompt = buildSystemPrompt(dealName || 'this property', dealType || 'conventional', rrRow.data, t12Row.data, budRow.data, compRow.data)
   const userEmail = auth.user.email || auth.user.id
   const question = messages[messages.length - 1]?.content || ''
 
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
+    max_tokens: 2048,
     system: systemPrompt,
     messages: messages.map(m => ({ role: m.role, content: m.content })),
   })

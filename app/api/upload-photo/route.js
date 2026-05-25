@@ -24,12 +24,12 @@ export async function POST(request) {
   )
 
   const ext = file.type === 'image/jpeg' ? 'jpg' : file.type.split('/')[1]
-  const path = `${dealId}.${ext}`
+  const path = `${dealId}/${Date.now()}.${ext}`
   const buffer = Buffer.from(await file.arrayBuffer())
 
   const { error: upErr } = await admin.storage.from(BUCKET).upload(path, buffer, {
     contentType: file.type,
-    upsert: true,
+    upsert: false,
   })
   if (upErr) return new Response(upErr.message, { status: 500 })
 

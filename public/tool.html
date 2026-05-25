@@ -540,6 +540,12 @@
       </div>
     </div>
     <div id="incomeContent" style="display:none"></div>
+    <div id="t12ExportRow" style="display:none;margin-top:10px;text-align:right">
+      <button id="t12ExportBtn" style="background:#fff;border:1px solid #d1d5db;border-radius:7px;padding:7px 14px;font-size:13px;cursor:pointer;color:#374151;display:inline-flex;align-items:center;gap:6px;">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export T-12 to Excel
+      </button>
+    </div>
   </div>
 
   <!-- UNIT DETAIL -->
@@ -25627,8 +25633,10 @@ function renderIncome(){
   const t=state.t12;
   const b=state.budget;   // parsed Rolling Forecast budget, or null
   const content=document.getElementById('incomeContent');
-  if(!t){ content.style.display='none'; return; }
+  const exportRow=document.getElementById('t12ExportRow');
+  if(!t){ content.style.display='none'; exportRow.style.display='none'; return; }
   content.style.display='block';
+  exportRow.style.display=DEAL_ID?'block':'none';
 
   const avgMo=v=>v==null?null:v/12;
   const inc=t.totalIncome, opex=t.totalOpEx, noi=t.noi, noiAR=t.noiAfterRepl;
@@ -27049,6 +27057,23 @@ plFi.addEventListener('change',e=>{if(e.target.files[0]){plUpload('/api/parse-st
 const plRRFi=document.getElementById('studentRRFileInput');
 document.getElementById('uploadStudentRRBtn').addEventListener('click',()=>plRRFi.click());
 plRRFi.addEventListener('change',e=>{if(e.target.files[0]){plUpload('/api/parse-student-rr',e.target.files[0],'Rent Roll');plRRFi.value='';}});
+document.getElementById('t12ExportBtn').addEventListener('click',async()=>{
+  if(!DEAL_ID) return;
+  const btn=document.getElementById('t12ExportBtn');
+  btn.disabled=true; btn.textContent='Exporting…';
+  try{
+    const res=await fetch('/api/export-t12?deal_id='+DEAL_ID);
+    if(!res.ok){ alert('Export failed: '+(await res.text())); return; }
+    const blob=await res.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    const cd=res.headers.get('Content-Disposition')||'';
+    a.download=cd.match(/filename="([^"]+)"/)?.[1]||'T12.xlsx';
+    a.click(); URL.revokeObjectURL(url);
+  }catch(e){ alert('Export error: '+e.message); }
+  finally{ btn.disabled=false; btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export T-12 to Excel'; }
+});
 const t12dz=document.getElementById('t12Drop'), t12fi=document.getElementById('t12FileInput');
 t12dz.addEventListener('click',()=>t12fi.click());
 t12fi.addEventListener('change',e=>{if(e.target.files[0])handleT12File(e.target.files[0]);});

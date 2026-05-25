@@ -715,6 +715,46 @@
         <input type="file" id="importFile" accept=".json" style="display:none">
       </div>
     </div>
+
+    <div class="card">
+      <div class="card-hd"><h2>Upload Format Guide</h2></div>
+      <div class="card-bd" style="padding:14px 18px">
+        <p class="muted" style="font-size:12.5px;margin-bottom:14px">Download these templates to show colleagues the exact column structure required for each upload type.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">Rent Roll — Yardi</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Unit, Unit Type, SQFT, Resident ID, Name, Market Rent, Charge Code, Amount, Move-In, Lease End</div>
+            <button class="btn subtle sm" onclick="dlTemplate('yardi-rr')">⬇ Template CSV</button>
+          </div>
+
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">Rent Roll — Entrata</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Bldg-Unit, SQFT, Unit Status, Resident, Move-In, Lease End, Market Rent, Scheduled Charges</div>
+            <button class="btn subtle sm" onclick="dlTemplate('entrata-rr')">⬇ Template CSV</button>
+          </div>
+
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">T-12 Income Statement</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Yardi format — month columns (Jan 2025…) with account rows and a Total column</div>
+            <button class="btn subtle sm" onclick="dlTemplate('t12')">⬇ Template CSV</button>
+          </div>
+
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">Budget</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Requires a "Rolling Forecast" sheet with month columns, Full-Year Budget, YTD Actual &amp; YTD Budget</div>
+            <button class="btn subtle sm" onclick="dlTemplate('budget')">⬇ Template CSV</button>
+          </div>
+
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">Comp Set — ApartmentIQ</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Requires "Market Survey" + "Floor Plan Data" sheets with property columns and bed-type rows</div>
+            <button class="btn subtle sm" onclick="dlTemplate('comps')">⬇ Template CSV</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="foot">
@@ -26935,6 +26975,90 @@ function renderHistory(){
       }
     });
   });
+}
+
+/* ============ Format Templates ============ */
+const TEMPLATES = {
+  'yardi-rr': {
+    name: 'Yardi_RentRoll_Template',
+    rows: [
+      ['NOTE: Row 1 – put "As of MM/DD/YYYY" in cell A1. Columns below start from row 2 (no header row needed).'],
+      ['Unit','Unit Type','SQFT','Resident ID','Resident Name','Market Rent','Charge Code','Charge Amount','','','Move-In','Lease End','Move-Out'],
+      ['101','1x1','750','R-10021','Smith, John','1450','rent','1450','','','2023-06-01','2024-05-31',''],
+      ['102','1x1','750','','VACANT','1450','','','','','','',''],
+      ['201','2x2','1100','R-10022','Jones, Mary','1850','rent','1850','','','2022-09-15','2024-08-31',''],
+    ]
+  },
+  'entrata-rr': {
+    name: 'Entrata_RentRoll_Template',
+    rows: [
+      ['Apr 2026','','','','','','',''],
+      ['','','','','','','',''],
+      ['NOTE: Row 1 = Month Year. Row 6 = header row. Rows below are unit data.'],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['Bldg-Unit','SQFT','Unit Status','Resident','Move-In','Lease End','Market Rent','Scheduled Charges'],
+      ['101','750','Occupied','Smith, John','2023-06-01','2024-05-31','1450','1450'],
+      ['102','750','Vacant','','','','1450',''],
+      ['201','1100','Occupied','Jones, Mary','2022-09-15','2024-08-31','1850','1850'],
+    ]
+  },
+  't12': {
+    name: 'T12_Template',
+    rows: [
+      ['NOTE: Upload a Yardi T-12 Excel export. The parser looks for a row with month labels like "Jan 2025", "Feb 2025" etc., plus a "Total" column.'],
+      ['Account','Description','Jan 2025','Feb 2025','Mar 2025','Apr 2025','May 2025','Jun 2025','Jul 2025','Aug 2025','Sep 2025','Oct 2025','Nov 2025','Dec 2025','Total'],
+      ['49999-999','Total Income','320000','315000','322000','318000','325000','330000','328000','321000','319000','324000','327000','332000','3881000'],
+      ['66999-199','Total Operating Expenses','210000','208000','212000','209000','215000','218000','216000','211000','209000','213000','215000','220000','2556000'],
+      ['','NOI','110000','107000','110000','109000','110000','112000','112000','110000','110000','111000','112000','112000','1325000'],
+      ['60000','Payroll','65000','65000','65000','65000','67000','67000','67000','65000','65000','66000','67000','68000','795000'],
+      ['61000','Repairs & Maintenance','18000','17000','19000','17000','20000','21000','19000','18000','17000','19000','20000','21000','226000'],
+      ['62000','Utilities','22000','21000','22000','21000','23000','24000','23000','22000','21000','22000','23000','24000','268000'],
+      ['63000','Management Fee','9600','9450','9660','9540','9750','9900','9840','9630','9570','9720','9810','9960','116430'],
+      ['64000','Insurance','8000','8000','8000','8000','8000','8000','8000','8000','8000','8000','8000','8000','96000'],
+    ]
+  },
+  'budget': {
+    name: 'Budget_RollingForecast_Template',
+    rows: [
+      ['NOTE: The file must have a sheet named exactly "Rolling Forecast". The parser looks for a header row with at least 10 month abbreviations (jan, feb…) plus "Full-Year Budget", "YTD Actual", "YTD Budget" columns.'],
+      ['','','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Full-Year Budget','YTD Actual','YTD Budget','YTD Var'],
+      ['Closed?','','Y','Y','Y','Y','N','N','N','N','N','N','N','N','','','',''],
+      ['Total Revenue','','320000','315000','322000','318000','325000','330000','328000','321000','319000','324000','327000','332000','3881000','1275000','1270000','5000'],
+      ['Total Expenses','','210000','208000','212000','209000','215000','218000','216000','211000','209000','213000','215000','220000','2556000','839000','845000','-6000'],
+      ['NOI','','110000','107000','110000','109000','110000','112000','112000','110000','110000','111000','112000','112000','1325000','436000','425000','11000'],
+    ]
+  },
+  'comps': {
+    name: 'CompSet_ApartmentIQ_Template',
+    rows: [
+      ['NOTE: Upload an ApartmentIQ Excel export. The file must have two sheets: "Market Survey" and "Floor Plan Data".'],
+      ['Sheet: Market Survey — structure below (Sheet: Floor Plan Data must also exist)'],
+      ['','Comp Average','YOUR PROPERTY','Comp 1 Name','Comp 2 Name','Comp 3 Name'],
+      ['Distance','','0','0.4','0.8','1.2'],
+      ['Studio'],
+      ['Asking Rent','','1050','1025','1075','1000'],
+      ['Net Effective Rent','','1020','995','1045','975'],
+      ['1 Bed'],
+      ['Asking Rent','','1350','1325','1375','1300'],
+      ['Net Effective Rent','','1310','1285','1340','1265'],
+      ['2 Bed'],
+      ['Asking Rent','','1750','1725','1775','1700'],
+      ['Net Effective Rent','','1700','1675','1720','1650'],
+    ]
+  }
+};
+
+function dlTemplate(key) {
+  const t = TEMPLATES[key];
+  if (!t) return;
+  const csv = t.rows.map(r => r.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement('a');
+  link.download = t.name + '.csv';
+  link.href = URL.createObjectURL(blob);
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
 }
 
 /* ============ Export ============ */

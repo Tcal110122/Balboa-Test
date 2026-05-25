@@ -26900,8 +26900,31 @@ function renderHistory(){
       <span class="snap-stat">LtL <b>${ltl==null?'—':money(ltl)}</b></span>
       ${trendHtml}
       <span style="flex:1"></span>
+      <button class="btn sm" data-dl="${s.id}">⬇ CSV</button>
       <button class="btn danger sm" data-snap="${s.id}">Delete</button>`;
     h.appendChild(row);
+  });
+  h.querySelectorAll('[data-dl]').forEach(b=>{
+    b.addEventListener('click',e=>{
+      const snap=state.snapshots.find(s=>s.id===e.target.dataset.dl);
+      if(!snap||!snap.units?.length){alert('No unit data available for this snapshot.');return;}
+      const deal=DEALS.find(d=>d.id===DEAL_ID);
+      const rows=[['Unit','Tier','Status','In-Place Rent','Market Rent','Loss-to-Lease','Lease Expiration']];
+      snap.units.slice().sort((a,b)=>a.unit.localeCompare(b.unit,undefined,{numeric:true})).forEach(u=>{
+        const ltl=(u.market!=null&&u.inplace!=null)?Math.round(u.market-u.inplace):'';
+        rows.push([u.unit,u.tier||'',u.vacant?'Vacant':'Occupied',
+          u.inplace!=null?Math.round(u.inplace):'',u.market!=null?Math.round(u.market):'',
+          ltl,u.leaseExp||'']);
+      });
+      const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+      const blob=new Blob([csv],{type:'text/csv'});
+      const link=document.createElement('a');
+      const name=((deal?.name||'property')+'-'+snap.rrDate).replace(/[^a-z0-9]/gi,'_');
+      link.download=name+'.csv';
+      link.href=URL.createObjectURL(blob);
+      document.body.appendChild(link);link.click();document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    });
   });
   h.querySelectorAll('[data-snap]').forEach(b=>{
     b.addEventListener('click',e=>{

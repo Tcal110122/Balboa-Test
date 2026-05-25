@@ -50,24 +50,55 @@ function buildSystemPrompt(dealName, dealType, rr, t12, budget, compData) {
   if (t12) {
     lines.push('\n## T-12 INCOME STATEMENT')
     const d = t12.data || t12
-    lines.push(`Period: ${d.period || 'N/A'}`)
-    if (d.noi) lines.push(`NOI: ${money(d.noi.total)}`)
-    if (d.revenue) lines.push(`Total revenue: ${money(d.revenue.total)}`)
-    if (d.expenses) lines.push(`Total expenses: ${money(d.expenses.total)}`)
-    if (d.noi && d.revenue && d.revenue.total)
-      lines.push(`NOI margin: ${pct(d.noi.total / d.revenue.total * 100)}`)
+    const months = (d.months || []).map(m => m.label || String(m))
+    lines.push(`Period: ${d.period || 'N/A'} | Months: ${months.join(', ')}`)
+
+    const addLine = (fig, label) => {
+      if (!fig) return
+      lines.push(`${label}: T-12 total ${money(fig.total)}`)
+      if (fig.vals?.length && months.length) {
+        const mo = months.map((m, i) => `${m}: ${money(fig.vals[i])}`).join(' | ')
+        lines.push(`  Monthly: ${mo}`)
+      }
+    }
+    addLine(d.totalIncome, 'Total Income')
+    addLine(d.totalOpEx,   'Total Operating Expenses')
+    addLine(d.noi,         'NOI')
+
+    if (d.totalIncome?.total && d.totalOpEx?.total)
+      lines.push(`Expense ratio: ${pct(d.totalOpEx.total / d.totalIncome.total * 100)}`)
+
+    if (d.categories?.length) {
+      lines.push('Expense categories:')
+      d.categories.forEach(c => lines.push(`  ${c.label || c.name}: ${money(c.total)}`))
+    }
   }
 
   if (budget) {
     lines.push('\n## BUDGET')
     const b = budget.data || budget
-    if (b.noi) lines.push(`Budgeted NOI: ${money(b.noi.total)}`)
-    if (b.revenue) lines.push(`Budgeted revenue: ${money(b.revenue.total)}`)
-    if (t12 && b.noi?.total != null) {
+    const addBudLine = (fig, label) => {
+      if (!fig) return
+      lines.push(`${label}: budgeted ${money(fig.total)}`)
+      if (fig.vals?.length && (b.months || []).length) {
+        const mo = (b.months || []).map((m, i) => `${m.label || m}: ${money(fig.vals[i])}`).join(' | ')
+        lines.push(`  Monthly budget: ${mo}`)
+      }
+    }
+    addBudLine(b.totalIncome || b.revenue, 'Total Income')
+    addBudLine(b.totalOpEx  || b.expenses, 'Total Operating Expenses')
+    addBudLine(b.noi,                      'NOI')
+
+    if (t12) {
       const t = t12.data || t12
-      if (t.noi?.total != null) {
+      if (t.noi?.total != null && b.noi?.total != null) {
         const v = t.noi.total - b.noi.total
         lines.push(`NOI vs budget: ${v >= 0 ? '+' : ''}${money(v)} (${pct(b.noi.total ? v / b.noi.total * 100 : null)})`)
+      }
+      if (t.totalIncome?.total != null && (b.totalIncome || b.revenue)?.total != null) {
+        const bInc = (b.totalIncome || b.revenue).total
+        const v = t.totalIncome.total - bInc
+        lines.push(`Income vs budget: ${v >= 0 ? '+' : ''}${money(v)} (${pct(bInc ? v / bInc * 100 : null)})`)
       }
     }
   }

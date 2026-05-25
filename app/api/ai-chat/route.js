@@ -165,7 +165,7 @@ export async function POST(request) {
   let body
   try { body = await request.json() } catch { return new Response('Bad request', { status: 400 }) }
 
-  const { dealId, dealName, dealType, messages, enableCharts } = body
+  const { dealId, dealName, dealType, messages, enableCharts, source } = body
   if (!dealId || !messages?.length) return new Response('Bad request', { status: 400 })
   if (!canAccessDeal(auth, dealId)) return new Response('Forbidden', { status: 403 })
 
@@ -221,6 +221,7 @@ Rules:
           question,
           tokens_in: tokensIn,
           tokens_out: tokensOut,
+          source: source || null,
         }).then(() => {}).catch(() => {})
       } catch (err) {
         controller.enqueue(new TextEncoder().encode('\n\n[Error: ' + err.message + ']'))

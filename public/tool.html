@@ -27149,7 +27149,8 @@ async function submitQuery(text) {
         dealName: deal?.name || '',
         dealType: deal?.type || 'conventional',
         messages: queryHistory,
-        enableCharts: true
+        enableCharts: true,
+        source: 'queries'
       })
     });
     if (!res.ok) {
@@ -27493,7 +27494,8 @@ document.getElementById('resetAll').addEventListener('click',()=>{
           dealId:DEAL_ID,
           dealName:deal?.name||'',
           dealType:deal?.type||'conventional',
-          messages:history
+          messages:history,
+          source:'chat'
         })
       });
       if(!res.ok){

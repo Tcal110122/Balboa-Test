@@ -27055,12 +27055,15 @@ function renderQueryChart(spec, container) {
       datasets: (spec.datasets || []).map((d, i) => {
         const color = d.color || QUERY_COLORS[i % QUERY_COLORS.length];
         const isLine = (spec.type === 'line');
+        const isPie = (spec.type === 'pie' || spec.type === 'doughnut');
         return {
           label: d.label || '',
           data: d.data || [],
-          backgroundColor: isLine ? color + '22' : color,
-          borderColor: color,
-          borderWidth: isLine ? 2.5 : 1,
+          backgroundColor: isPie
+            ? (d.data || []).map((_, j) => QUERY_COLORS[j % QUERY_COLORS.length])
+            : isLine ? color + '22' : color,
+          borderColor: isPie ? '#ffffff' : color,
+          borderWidth: isPie ? 2 : isLine ? 2.5 : 1,
           fill: isLine ? false : undefined,
           tension: isLine ? 0.35 : undefined,
           pointRadius: isLine ? 3 : undefined,

@@ -116,6 +116,9 @@ export async function POST(request) {
     budRow.data
   )
 
+  const userEmail = auth.user.email || auth.user.id
+  const question = messages[messages.length - 1]?.content || ''
+
   // Stream Claude's response back
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
@@ -132,6 +135,19 @@ export async function POST(request) {
             controller.enqueue(new TextEncoder().encode(chunk.delta.text))
           }
         }
+        // Log usage after stream completes
+        const finalMsg = await stream.finalMessage()
+        const tokensIn = finalMsg.usage?.input_tokens ?? 0
+        const tokensOut = finalMsg.usage?.output_tokens ?? 0
+        supabase.from('ai_chat_logs').insert({
+          user_id: auth.user.id,
+          user_email: userEmail,
+          deal_id: dealId,
+          deal_name: dealName || null,
+          question,
+          tokens_in: tokensIn,
+          tokens_out: tokensOut,
+        }).then(() => {}).catch(() => {})
       } catch (err) {
         controller.enqueue(new TextEncoder().encode('\n\n[Error: ' + err.message + ']'))
       } finally {

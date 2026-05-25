@@ -6,6 +6,8 @@
 <title>Asset Oversight — Balboa REP</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root {
     --ink:#1a1d21; --ink-soft:#4a4f57; --ink-faint:#8b9099;
@@ -222,7 +224,8 @@
 <div class="print-stamp" id="printStamp"></div>
 
 <div class="tabs">
-  <button class="tab active" data-tab="load">Load Rent Roll</button>
+  <button class="tab active" data-tab="cover">Portfolio Overview</button>
+  <button class="tab" data-tab="load">Load Rent Roll</button>
   <button class="tab" data-tab="dashboard">Oversight Dashboard</button>
   <button class="tab" data-tab="comps" id="tabComps">Comp Set</button>
   <button class="tab" data-tab="preleasing" id="tabPreleasing" style="display:none">Pre-Leasing</button>
@@ -237,8 +240,18 @@
 
 <div class="wrap">
 
+  <!-- COVER -->
+  <div class="panel active" id="panel-cover">
+    <div style="padding:20px 0 16px;display:flex;align-items:baseline;gap:12px">
+      <h2 style="font-size:16px;font-weight:700">Portfolio Overview</h2>
+      <span class="muted" style="font-size:12.5px">Click a property to open its dashboard</span>
+    </div>
+    <div id="coverMap" style="height:460px;width:100%;border-radius:10px;border:1px solid var(--line);overflow:hidden"></div>
+    <div id="coverCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:18px"></div>
+  </div>
+
   <!-- LOAD -->
-  <div class="panel active" id="panel-load">
+  <div class="panel" id="panel-load">
     <div class="hint">
       <b>How this works:</b> Export the <b>Rent Roll with Lease Charges</b> from Yardi (the standard
       Greystar report) and drop the .xlsx below. The tool parses every unit, separates true base
@@ -23768,6 +23781,9 @@ async function load(){
   // 3. Populate switcher UI
   populateDealSwitcher();
 
+  // 3b. Render cover map now that DEALS is populated
+  renderCover();
+
   // 4. Load data
   if(DEAL_ID){
     await loadDealData(DEAL_ID);
@@ -27138,10 +27154,93 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='history') renderHistory();
     if(t.dataset.tab==='preleasing') renderPreleasing();
     if(t.dataset.tab==='queries') renderQueries();
+    if(t.dataset.tab==='cover'){ renderCover(); setTimeout(()=>{ if(coverMap) coverMap.invalidateSize(); },200); }
   });
 });
 
 function renderAll(){ renderDashboard(); renderRanking(); renderLeasing(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); renderPreleasing(); renderQueries(); }
+
+/* ============ Cover / Portfolio Map ============ */
+let coverMap = null;
+let coverMapReady = false;
+
+function initCoverMap() {
+  if (coverMapReady) return;
+  const el = document.getElementById('coverMap');
+  if (!el || typeof L === 'undefined') return;
+  coverMapReady = true;
+  coverMap = L.map('coverMap', { zoomControl: true }).setView([38.5, -96], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 18
+  }).addTo(coverMap);
+  loadMapMarkers();
+}
+
+async function loadMapMarkers() {
+  if (!coverMap) return;
+  const cache = JSON.parse(localStorage.getItem('balboa_geocache') || '{}');
+  let delay = 0;
+  for (const deal of DEALS) {
+    const cached = cache[deal.id];
+    if (cached) { addCoverMarker(deal, cached.lat, cached.lng); continue; }
+    const query = encodeURIComponent(deal.address || (deal.name + (deal.market ? ', ' + deal.market : '')));
+    await new Promise(r => setTimeout(r, delay));
+    delay += 1100;
+    try {
+      const res = await fetch('https://nominatim.openstreetmap.org/search?q=' + query + '&format=json&limit=1&countrycodes=us', { headers: { 'Accept-Language': 'en-US' } });
+      const data = await res.json();
+      if (data?.[0]) {
+        const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+        cache[deal.id] = { lat, lng };
+        localStorage.setItem('balboa_geocache', JSON.stringify(cache));
+        addCoverMarker(deal, lat, lng);
+      }
+    } catch(e) {}
+  }
+}
+
+function addCoverMarker(deal, lat, lng) {
+  if (!coverMap) return;
+  const icon = L.divIcon({
+    html: `<div style="background:#1f5c4d;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer">●</div>`,
+    className: '', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -18]
+  });
+  const marker = L.marker([lat, lng], { icon }).addTo(coverMap);
+  const unitStr = deal.unit_count ? `<div style="color:#6b7280;font-size:12px">${deal.unit_count} units</div>` : '';
+  const mktStr = deal.market ? `<div style="color:#6b7280;font-size:12px">${deal.market}</div>` : '';
+  marker.bindPopup(`
+    <div style="min-width:160px;font-family:inherit">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">${deal.name}</div>
+      ${mktStr}${unitStr}
+      <button onclick="openDealFromMap('${deal.id}')" style="margin-top:8px;background:#1f5c4d;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;width:100%">Open Dashboard →</button>
+    </div>`, { maxWidth: 220 });
+}
+
+function openDealFromMap(dealId) {
+  const deal = DEALS.find(d => d.id === dealId);
+  if (!deal) return;
+  switchDeal(deal).then(() => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    document.querySelector('[data-tab="dashboard"]').classList.add('active');
+    document.getElementById('panel-dashboard').classList.add('active');
+    renderDashboard();
+  });
+}
+
+function renderCover() {
+  initCoverMap();
+  const cards = document.getElementById('coverCards');
+  if (!cards) return;
+  cards.innerHTML = DEALS.map(deal => `
+    <div onclick="openDealFromMap('${deal.id}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow=''">
+      <div style="font-weight:700;font-size:13px;margin-bottom:2px">${deal.name}</div>
+      ${deal.market ? `<div style="font-size:12px;color:#6b7280">${deal.market}</div>` : ''}
+      ${deal.unit_count ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${deal.unit_count} units</div>` : ''}
+      ${deal.status ? `<div style="margin-top:6px"><span style="font-size:11px;background:#e3ede9;color:#1f5c4d;border-radius:4px;padding:2px 7px;font-weight:600">${deal.status}</span></div>` : ''}
+    </div>`).join('');
+}
 
 /* ============ Queries Tab ============ */
 const QUERY_COLORS = ['#2563EB','#EF4444','#16A34A','#F59E0B','#8B5CF6','#EC4899','#0891B2'];

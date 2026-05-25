@@ -27084,19 +27084,28 @@ function renderQueryChart(spec, container) {
   csvBtn.textContent = '⬇ CSV';
   csvBtn.style.cssText = btnStyle;
   csvBtn.onclick = () => {
+    const slug = (spec.title || 'chart').replace(/[^a-z0-9]/gi, '_');
+    // Download CSV
     const labels = spec.labels || [];
     const datasets = spec.datasets || [];
     const headers = ['Label', ...datasets.map(d => d.label || 'Value')];
     const rows = labels.map((lbl, i) => [lbl, ...datasets.map(d => (d.data || [])[i] ?? '')]);
     const csv = [headers, ...rows].map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.download = (spec.title || 'chart').replace(/[^a-z0-9]/gi, '_') + '.csv';
-    link.href = URL.createObjectURL(blob);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    const csvBlob = new Blob([csv], { type: 'text/csv' });
+    const csvLink = document.createElement('a');
+    csvLink.download = slug + '.csv';
+    csvLink.href = URL.createObjectURL(csvBlob);
+    document.body.appendChild(csvLink);
+    csvLink.click();
+    document.body.removeChild(csvLink);
+    URL.revokeObjectURL(csvLink.href);
+    // Also download PNG
+    const pngLink = document.createElement('a');
+    pngLink.download = slug + '.png';
+    pngLink.href = canvas.toDataURL('image/png');
+    document.body.appendChild(pngLink);
+    pngLink.click();
+    document.body.removeChild(pngLink);
   };
 
   btnBar.appendChild(pngBtn);

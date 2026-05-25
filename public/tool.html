@@ -27135,6 +27135,152 @@ document.getElementById('resetAll').addEventListener('click',()=>{
 /* ============ Init ============ */
 (async function(){ await load(); renderAll(); updateHdr(); })();
 </script>
+
+<!-- ============ AI Chat ============ -->
+<style>
+#aiBtn{position:fixed;bottom:24px;right:24px;z-index:1000;width:52px;height:52px;border-radius:50%;background:#2563eb;color:#fff;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(37,99,235,.45);display:flex;align-items:center;justify-content:center;transition:transform .15s,background .15s;}
+#aiBtn:hover{background:#1d4ed8;transform:scale(1.07);}
+#aiBtn svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+#aiDrawer{position:fixed;bottom:0;right:0;z-index:999;width:420px;max-width:100vw;height:0;overflow:hidden;display:flex;flex-direction:column;background:#fff;box-shadow:-4px 0 32px rgba(0,0,0,.14);border-top-left-radius:14px;transition:height .25s cubic-bezier(.4,0,.2,1);}
+#aiDrawer.open{height:min(620px,90vh);}
+#aiHeader{display:flex;align-items:center;gap:10px;padding:14px 16px 12px;border-bottom:1px solid #e5e7eb;flex-shrink:0;}
+#aiHeader h3{margin:0;font-size:14px;font-weight:600;color:#111;flex:1;}
+#aiHeader .sub{font-size:11px;color:#6b7280;}
+#aiCloseBtn{background:none;border:none;cursor:pointer;color:#9ca3af;font-size:20px;line-height:1;padding:2px 4px;}#aiCloseBtn:hover{color:#374151;}
+#aiMessages{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;}
+.ai-msg{max-width:88%;line-height:1.55;font-size:13.5px;padding:9px 13px;border-radius:12px;white-space:pre-wrap;word-break:break-word;}
+.ai-msg.user{align-self:flex-end;background:#2563eb;color:#fff;border-bottom-right-radius:4px;}
+.ai-msg.assistant{align-self:flex-start;background:#f3f4f6;color:#111;border-bottom-left-radius:4px;}
+.ai-msg.assistant.streaming::after{content:'▋';animation:blink .8s step-start infinite;}
+@keyframes blink{50%{opacity:0;}}
+.ai-msg.error{align-self:flex-start;background:#fef2f2;color:#b91c1c;}
+#aiEmpty{color:#9ca3af;font-size:13px;text-align:center;margin:auto;padding:20px;line-height:1.6;}
+#aiFooter{padding:10px 12px;border-top:1px solid #e5e7eb;display:flex;gap:8px;flex-shrink:0;}
+#aiInput{flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:13.5px;resize:none;outline:none;font-family:inherit;max-height:120px;overflow-y:auto;}
+#aiInput:focus{border-color:#2563eb;}
+#aiSendBtn{background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:500;flex-shrink:0;}
+#aiSendBtn:disabled{background:#93c5fd;cursor:default;}
+#aiSendBtn:not(:disabled):hover{background:#1d4ed8;}
+</style>
+
+<!-- Floating button -->
+<button id="aiBtn" title="Ask AI about this property">
+  <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+</button>
+
+<!-- Chat drawer -->
+<div id="aiDrawer">
+  <div id="aiHeader">
+    <svg width="18" height="18" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <div style="flex:1"><h3 id="aiDealName">AI Assistant</h3><div class="sub">Ask anything about this property</div></div>
+    <button id="aiCloseBtn">×</button>
+  </div>
+  <div id="aiMessages">
+    <div id="aiEmpty">Ask me anything — occupancy, rents, loss-to-lease, lease expirations, T-12 performance, budget variance, and more.</div>
+  </div>
+  <div id="aiFooter">
+    <textarea id="aiInput" rows="1" placeholder="Ask a question…"></textarea>
+    <button id="aiSendBtn">Send</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const btn=document.getElementById('aiBtn');
+  const drawer=document.getElementById('aiDrawer');
+  const closeBtn=document.getElementById('aiCloseBtn');
+  const messages=document.getElementById('aiMessages');
+  const empty=document.getElementById('aiEmpty');
+  const input=document.getElementById('aiInput');
+  const sendBtn=document.getElementById('aiSendBtn');
+  const dealNameEl=document.getElementById('aiDealName');
+  const history=[];
+  let streaming=false;
+
+  btn.addEventListener('click',()=>{
+    drawer.classList.toggle('open');
+    if(drawer.classList.contains('open')){
+      const deal=DEALS.find(d=>d.id===DEAL_ID);
+      dealNameEl.textContent=(deal?.name||'AI Assistant');
+      input.focus();
+    }
+  });
+  closeBtn.addEventListener('click',()=>drawer.classList.remove('open'));
+
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}
+  });
+  input.addEventListener('input',()=>{
+    input.style.height='auto';
+    input.style.height=Math.min(input.scrollHeight,120)+'px';
+  });
+  sendBtn.addEventListener('click',sendMessage);
+
+  function addMsg(role,text,cls){
+    empty.style.display='none';
+    const el=document.createElement('div');
+    el.className='ai-msg '+role+(cls?' '+cls:'');
+    el.textContent=text;
+    messages.appendChild(el);
+    messages.scrollTop=messages.scrollHeight;
+    return el;
+  }
+
+  async function sendMessage(){
+    const text=input.value.trim();
+    if(!text||streaming) return;
+    if(!DEAL_ID){addMsg('assistant','Please select a deal first.','error');return;}
+
+    input.value=''; input.style.height='auto';
+    addMsg('user',text);
+    history.push({role:'user',content:text});
+
+    const deal=DEALS.find(d=>d.id===DEAL_ID);
+    const assistantEl=addMsg('assistant','','streaming');
+    sendBtn.disabled=true; streaming=true;
+    let accumulated='';
+
+    try{
+      const res=await fetch('/api/ai-chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          dealId:DEAL_ID,
+          dealName:deal?.name||'',
+          dealType:deal?.type||'conventional',
+          messages:history
+        })
+      });
+      if(!res.ok){
+        const err=await res.text();
+        assistantEl.textContent='Error: '+(err||res.status);
+        assistantEl.classList.remove('streaming');
+        assistantEl.classList.add('error');
+        history.pop();
+      } else {
+        const reader=res.body.getReader();
+        const dec=new TextDecoder();
+        while(true){
+          const {done,value}=await reader.read();
+          if(done) break;
+          accumulated+=dec.decode(value,{stream:true});
+          assistantEl.textContent=accumulated;
+          messages.scrollTop=messages.scrollHeight;
+        }
+        assistantEl.classList.remove('streaming');
+        history.push({role:'assistant',content:accumulated});
+      }
+    }catch(err){
+      assistantEl.textContent='Network error: '+err.message;
+      assistantEl.classList.remove('streaming');
+      assistantEl.classList.add('error');
+      history.pop();
+    }finally{
+      sendBtn.disabled=false; streaming=false; input.focus();
+    }
+  }
+})();
+</script>
 </body>
 </html>
 

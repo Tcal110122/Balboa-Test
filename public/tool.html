@@ -23710,6 +23710,7 @@ async function switchDeal(deal){
   await loadDealData(deal.id);
   restoreLocalState(deal.id);
   save(); renderAll(); updateHdr();
+  if(window.refreshChatDrawer) window.refreshChatDrawer();
 }
 
 async function load(){
@@ -26997,7 +26998,12 @@ function renderAll(){ renderDashboard(); renderRanking(); renderLeasing(); rende
 
 /* ============ Queries Tab ============ */
 const QUERY_COLORS = ['#2563EB','#EF4444','#16A34A','#F59E0B','#8B5CF6','#EC4899','#0891B2'];
-const queryHistory = []; // full message array for API context
+const queryHistories = {}; // per-deal: { api: [], display: [] }
+function getDealQuerySession() {
+  if (!DEAL_ID) return { api: [], display: [] };
+  if (!queryHistories[DEAL_ID]) queryHistories[DEAL_ID] = { api: [], display: [] };
+  return queryHistories[DEAL_ID];
+}
 let queryStreaming = false;
 let queryCharts = []; // track Chart.js instances for cleanup
 
@@ -27115,12 +27121,31 @@ function getSuggestions() {
 
 function renderQueries() {
   const suggestions = document.getElementById('querySuggestions');
-  if (!suggestions) return;
-  suggestions.innerHTML = getSuggestions().map(q =>
-    `<button onclick="submitQuery(${JSON.stringify(q)})"
-      style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer;color:#374151;white-space:nowrap"
-      onmouseover="this.style.background='#e5e7eb'" onmouseout="this.style.background='#f3f4f6'">${q}</button>`
-  ).join('');
+  if (suggestions) {
+    suggestions.innerHTML = getSuggestions().map(q =>
+      `<button onclick="submitQuery(${JSON.stringify(q)})"
+        style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer;color:#374151;white-space:nowrap"
+        onmouseover="this.style.background='#e5e7eb'" onmouseout="this.style.background='#f3f4f6'">${q}</button>`
+    ).join('');
+  }
+
+  // Rebuild message list for current deal
+  const msgs = document.getElementById('queryMessages');
+  const emptyEl = document.getElementById('queryEmpty');
+  if (!msgs) return;
+
+  // Destroy existing Chart.js instances and clear messages (keep queryEmpty)
+  queryCharts.forEach(c => { try { c.destroy(); } catch(e) {} });
+  queryCharts = [];
+  Array.from(msgs.children).forEach(c => { if (c.id !== 'queryEmpty') c.remove(); });
+
+  const session = DEAL_ID ? getDealQuerySession() : null;
+  if (!session || !session.display.length) {
+    if (emptyEl) emptyEl.style.display = '';
+  } else {
+    if (emptyEl) emptyEl.style.display = 'none';
+    session.display.forEach(m => appendQueryMessage(m.role, m.content, m.parsed));
+  }
 }
 
 async function submitQuery(text) {
@@ -27130,8 +27155,10 @@ async function submitQuery(text) {
   document.getElementById('queryInput').value = '';
   document.getElementById('queryInput').style.height = 'auto';
 
+  const session = getDealQuerySession();
   appendQueryMessage('user', text);
-  queryHistory.push({ role: 'user', content: text });
+  session.api.push({ role: 'user', content: text });
+  session.display.push({ role: 'user', content: text });
 
   const deal = DEALS.find(d => d.id === DEAL_ID);
   const assistantEl = appendQueryMessage('assistant', '');
@@ -27148,7 +27175,7 @@ async function submitQuery(text) {
         dealId: DEAL_ID,
         dealName: deal?.name || '',
         dealType: deal?.type || 'conventional',
-        messages: queryHistory,
+        messages: session.api,
         enableCharts: true,
         source: 'queries'
       })
@@ -27170,7 +27197,8 @@ async function submitQuery(text) {
       const parsed = parseQueryResponse(accumulated);
       assistantEl.remove();
       appendQueryMessage('assistant', parsed.type === 'text' ? parsed.text : parsed.commentary, parsed);
-      queryHistory.push({ role: 'assistant', content: accumulated });
+      session.api.push({ role: 'assistant', content: accumulated });
+      session.display.push({ role: 'assistant', content: parsed.type === 'text' ? parsed.text : parsed.commentary, parsed });
     }
   } catch (e) {
     if (bubble) bubble.textContent = 'Network error: ' + e.message;
@@ -27440,14 +27468,40 @@ document.getElementById('resetAll').addEventListener('click',()=>{
   const input=document.getElementById('aiInput');
   const sendBtn=document.getElementById('aiSendBtn');
   const dealNameEl=document.getElementById('aiDealName');
-  const history=[];
+
+  // Per-deal storage: { api: [{role,content}], display: [{role,text}] }
+  const chatHistories={};
+  function getDrawerSession(){
+    if(!DEAL_ID) return {api:[],display:[]};
+    if(!chatHistories[DEAL_ID]) chatHistories[DEAL_ID]={api:[],display:[]};
+    return chatHistories[DEAL_ID];
+  }
   let streaming=false;
+
+  function rebuildMessages(){
+    // Remove all message elements, keep #aiEmpty
+    Array.from(messages.children).forEach(c=>{ if(c.id!=='aiEmpty') c.remove(); });
+    const sess=getDrawerSession();
+    if(!sess.display.length){ empty.style.display=''; return; }
+    empty.style.display='none';
+    sess.display.forEach(m=>{ const el=document.createElement('div'); el.className='ai-msg '+m.role; el.textContent=m.text; messages.appendChild(el); });
+    messages.scrollTop=messages.scrollHeight;
+  }
+
+  // Called by switchDeal to swap context
+  window.refreshChatDrawer=function(){
+    streaming=false; sendBtn.disabled=false;
+    const deal=DEALS.find(d=>d.id===DEAL_ID);
+    dealNameEl.textContent=(deal?.name||'AI Assistant');
+    rebuildMessages();
+  };
 
   btn.addEventListener('click',()=>{
     drawer.classList.toggle('open');
     if(drawer.classList.contains('open')){
       const deal=DEALS.find(d=>d.id===DEAL_ID);
       dealNameEl.textContent=(deal?.name||'AI Assistant');
+      rebuildMessages();
       input.focus();
     }
   });
@@ -27477,9 +27531,11 @@ document.getElementById('resetAll').addEventListener('click',()=>{
     if(!text||streaming) return;
     if(!DEAL_ID){addMsg('assistant','Please select a deal first.','error');return;}
 
+    const sess=getDrawerSession();
     input.value=''; input.style.height='auto';
     addMsg('user',text);
-    history.push({role:'user',content:text});
+    sess.api.push({role:'user',content:text});
+    sess.display.push({role:'user',text});
 
     const deal=DEALS.find(d=>d.id===DEAL_ID);
     const assistantEl=addMsg('assistant','','streaming');
@@ -27494,7 +27550,7 @@ document.getElementById('resetAll').addEventListener('click',()=>{
           dealId:DEAL_ID,
           dealName:deal?.name||'',
           dealType:deal?.type||'conventional',
-          messages:history,
+          messages:sess.api,
           source:'chat'
         })
       });
@@ -27503,7 +27559,7 @@ document.getElementById('resetAll').addEventListener('click',()=>{
         assistantEl.textContent='Error: '+(err||res.status);
         assistantEl.classList.remove('streaming');
         assistantEl.classList.add('error');
-        history.pop();
+        sess.api.pop();
       } else {
         const reader=res.body.getReader();
         const dec=new TextDecoder();
@@ -27515,13 +27571,14 @@ document.getElementById('resetAll').addEventListener('click',()=>{
           messages.scrollTop=messages.scrollHeight;
         }
         assistantEl.classList.remove('streaming');
-        history.push({role:'assistant',content:accumulated});
+        sess.api.push({role:'assistant',content:accumulated});
+        sess.display.push({role:'assistant',text:accumulated});
       }
     }catch(err){
       assistantEl.textContent='Network error: '+err.message;
       assistantEl.classList.remove('streaming');
       assistantEl.classList.add('error');
-      history.pop();
+      sess.api.pop();
     }finally{
       sendBtn.disabled=false; streaming=false; input.focus();
     }

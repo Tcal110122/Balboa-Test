@@ -27071,10 +27071,20 @@ function renderQueryChart(spec, container) {
   const pngBtn = document.createElement('button');
   pngBtn.textContent = '⬇ PNG';
   pngBtn.style.cssText = btnStyle;
+  function chartToPngUrl() {
+    const exp = document.createElement('canvas');
+    exp.width = canvas.width; exp.height = canvas.height;
+    const ctx = exp.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, exp.width, exp.height);
+    ctx.drawImage(canvas, 0, 0);
+    return exp.toDataURL('image/png');
+  }
+
   pngBtn.onclick = () => {
     const link = document.createElement('a');
     link.download = (spec.title || 'chart').replace(/[^a-z0-9]/gi, '_') + '.png';
-    link.href = canvas.toDataURL('image/png');
+    link.href = chartToPngUrl();
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -27102,7 +27112,7 @@ function renderQueryChart(spec, container) {
     // Also download PNG
     const pngLink = document.createElement('a');
     pngLink.download = slug + '.png';
-    pngLink.href = canvas.toDataURL('image/png');
+    pngLink.href = chartToPngUrl();
     document.body.appendChild(pngLink);
     pngLink.click();
     document.body.removeChild(pngLink);

@@ -27172,11 +27172,11 @@ document.getElementById('resetAll').addEventListener('click',()=>{
 <div id="aiDrawer">
   <div id="aiHeader">
     <svg width="18" height="18" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    <div style="flex:1"><h3 id="aiDealName">Portfolio Assistant</h3><div class="sub">Ask anything across all your properties</div></div>
+    <div style="flex:1"><h3 id="aiDealName">AI Assistant</h3><div class="sub">Ask anything about this property</div></div>
     <button id="aiCloseBtn">×</button>
   </div>
   <div id="aiMessages">
-    <div id="aiEmpty">Ask me anything across your portfolio — occupancy, rents, loss-to-lease, lease expirations, T-12 performance, budget variance, and more. Try: "Which property has the worst loss-to-lease?" or "Compare occupancy across all deals."</div>
+    <div id="aiEmpty">Ask me anything about this property — occupancy, rents, loss-to-lease, lease expirations, T-12 performance, budget variance, and more.</div>
   </div>
   <div id="aiFooter">
     <textarea id="aiInput" rows="1" placeholder="Ask a question…"></textarea>
@@ -27200,7 +27200,8 @@ document.getElementById('resetAll').addEventListener('click',()=>{
   btn.addEventListener('click',()=>{
     drawer.classList.toggle('open');
     if(drawer.classList.contains('open')){
-      dealNameEl.textContent='Portfolio Assistant';
+      const deal=DEALS.find(d=>d.id===DEAL_ID);
+      dealNameEl.textContent=(deal?.name||'AI Assistant');
       input.focus();
     }
   });
@@ -27234,6 +27235,7 @@ document.getElementById('resetAll').addEventListener('click',()=>{
     addMsg('user',text);
     history.push({role:'user',content:text});
 
+    const deal=DEALS.find(d=>d.id===DEAL_ID);
     const assistantEl=addMsg('assistant','','streaming');
     sendBtn.disabled=true; streaming=true;
     let accumulated='';
@@ -27242,7 +27244,12 @@ document.getElementById('resetAll').addEventListener('click',()=>{
       const res=await fetch('/api/ai-chat',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({messages:history})
+        body:JSON.stringify({
+          dealId:DEAL_ID,
+          dealName:deal?.name||'',
+          dealType:deal?.type||'conventional',
+          messages:history
+        })
       });
       if(!res.ok){
         const err=await res.text();

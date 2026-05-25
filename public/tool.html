@@ -27075,7 +27075,9 @@ function renderQueryChart(spec, container) {
     const link = document.createElement('a');
     link.download = (spec.title || 'chart').replace(/[^a-z0-9]/gi, '_') + '.png';
     link.href = canvas.toDataURL('image/png');
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
   const csvBtn = document.createElement('button');
@@ -27091,7 +27093,9 @@ function renderQueryChart(spec, container) {
     const link = document.createElement('a');
     link.download = (spec.title || 'chart').replace(/[^a-z0-9]/gi, '_') + '.csv';
     link.href = URL.createObjectURL(blob);
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
   };
 

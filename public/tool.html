@@ -27062,6 +27062,43 @@ function renderQueryChart(spec, container) {
   };
   const chart = new Chart(canvas, cfg);
   queryCharts.push(chart);
+
+  // Export buttons
+  const btnBar = document.createElement('div');
+  btnBar.style.cssText = 'display:flex;gap:8px;margin-top:6px';
+  const btnStyle = 'background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:4px 11px;font-size:12px;cursor:pointer;color:#374151';
+
+  const pngBtn = document.createElement('button');
+  pngBtn.textContent = '⬇ PNG';
+  pngBtn.style.cssText = btnStyle;
+  pngBtn.onclick = () => {
+    const link = document.createElement('a');
+    link.download = (spec.title || 'chart').replace(/[^a-z0-9]/gi, '_') + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+
+  const csvBtn = document.createElement('button');
+  csvBtn.textContent = '⬇ CSV';
+  csvBtn.style.cssText = btnStyle;
+  csvBtn.onclick = () => {
+    const labels = spec.labels || [];
+    const datasets = spec.datasets || [];
+    const headers = ['Label', ...datasets.map(d => d.label || 'Value')];
+    const rows = labels.map((lbl, i) => [lbl, ...datasets.map(d => (d.data || [])[i] ?? '')]);
+    const csv = [headers, ...rows].map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const link = document.createElement('a');
+    link.download = (spec.title || 'chart').replace(/[^a-z0-9]/gi, '_') + '.csv';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  btnBar.appendChild(pngBtn);
+  btnBar.appendChild(csvBtn);
+  container.appendChild(btnBar);
+
   return wrap;
 }
 

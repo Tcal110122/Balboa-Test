@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Asset Oversight — Balboa REP</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --ink:#1a1d21; --ink-soft:#4a4f57; --ink-faint:#8b9099;
@@ -231,6 +232,7 @@
   <button class="tab" data-tab="units">Unit Detail</button>
   <button class="tab" data-tab="trends">Trends</button>
   <button class="tab" data-tab="history">Period History</button>
+  <button class="tab" data-tab="queries">Queries</button>
 </div>
 
 <div class="wrap">
@@ -545,6 +547,28 @@
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export T-12 to Excel
       </button>
+    </div>
+  </div>
+
+  <!-- QUERIES -->
+  <div class="panel" id="panel-queries">
+    <div id="queriesWrap" style="display:flex;flex-direction:column;height:calc(100vh - 160px);min-height:480px">
+      <div id="queryMessages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+        <div id="queryEmpty" style="margin:auto;text-align:center;color:#9ca3af;font-size:13.5px;line-height:1.7;max-width:480px">
+          <div style="font-size:28px;margin-bottom:10px">📊</div>
+          <b style="color:#374151">Ask anything — get text answers or live charts</b><br>
+          Try one of the suggestions below, or type your own question.
+        </div>
+      </div>
+      <div style="padding:12px 20px 16px;border-top:1px solid #e5e7eb;flex-shrink:0">
+        <div id="querySuggestions" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <textarea id="queryInput" rows="2" placeholder="Ask a question about your data…"
+            style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:9px 12px;font-size:13.5px;resize:none;outline:none;font-family:inherit;max-height:140px;overflow-y:auto;line-height:1.5"></textarea>
+          <button id="querySubmitBtn"
+            style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 18px;cursor:pointer;font-size:13.5px;font-weight:500;flex-shrink:0;height:42px">Ask</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -26965,10 +26989,196 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='trends') renderTrends();
     if(t.dataset.tab==='history') renderHistory();
     if(t.dataset.tab==='preleasing') renderPreleasing();
+    if(t.dataset.tab==='queries') renderQueries();
   });
 });
 
-function renderAll(){ renderDashboard(); renderRanking(); renderLeasing(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); renderPreleasing(); }
+function renderAll(){ renderDashboard(); renderRanking(); renderLeasing(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); renderPreleasing(); renderQueries(); }
+
+/* ============ Queries Tab ============ */
+const QUERY_COLORS = ['#2563EB','#EF4444','#16A34A','#F59E0B','#8B5CF6','#EC4899','#0891B2'];
+const queryHistory = []; // full message array for API context
+let queryStreaming = false;
+let queryCharts = []; // track Chart.js instances for cleanup
+
+function parseQueryResponse(text) {
+  const m = text.match(/<chart>([\s\S]*?)<\/chart>/);
+  if (m) {
+    try {
+      const spec = JSON.parse(m[1].trim());
+      const commentary = text.replace(/<chart>[\s\S]*?<\/chart>/, '').trim();
+      return { type: 'chart', spec, commentary };
+    } catch(e) {}
+  }
+  return { type: 'text', text };
+}
+
+function renderQueryChart(spec, container) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;width:100%;max-width:700px;height:320px;margin:8px 0';
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  container.appendChild(wrap);
+  const cfg = {
+    type: spec.type === 'pie' || spec.type === 'doughnut' ? spec.type : spec.type || 'bar',
+    data: {
+      labels: spec.labels || [],
+      datasets: (spec.datasets || []).map((d, i) => {
+        const color = d.color || QUERY_COLORS[i % QUERY_COLORS.length];
+        const isLine = (spec.type === 'line');
+        return {
+          label: d.label || '',
+          data: d.data || [],
+          backgroundColor: isLine ? color + '22' : color,
+          borderColor: color,
+          borderWidth: isLine ? 2.5 : 1,
+          fill: isLine ? false : undefined,
+          tension: isLine ? 0.35 : undefined,
+          pointRadius: isLine ? 3 : undefined,
+        };
+      })
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        title: { display: !!spec.title, text: spec.title || '', font: { size: 14, weight: '600' }, padding: { bottom: 12 } },
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 } } },
+        tooltip: { callbacks: { label: ctx => {
+          const v = ctx.parsed.y ?? ctx.parsed;
+          return ' ' + ctx.dataset.label + ': ' + (typeof v === 'number' && Math.abs(v) > 100 ? '$' + Math.round(v).toLocaleString() : v);
+        }}}
+      },
+      scales: (spec.type === 'pie' || spec.type === 'doughnut') ? {} : {
+        y: { ticks: { callback: v => Math.abs(v) > 999 ? '$' + (v/1000).toFixed(0) + 'k' : v }, grid: { color: '#f3f4f6' } },
+        x: { grid: { display: false } }
+      }
+    }
+  };
+  const chart = new Chart(canvas, cfg);
+  queryCharts.push(chart);
+  return wrap;
+}
+
+function appendQueryMessage(role, content, parsed) {
+  const empty = document.getElementById('queryEmpty');
+  if (empty) empty.style.display = 'none';
+  const msgs = document.getElementById('queryMessages');
+  const el = document.createElement('div');
+  const isUser = role === 'user';
+  el.style.cssText = `display:flex;flex-direction:column;align-items:${isUser ? 'flex-end' : 'flex-start'};gap:6px;max-width:100%`;
+
+  if (isUser) {
+    const bubble = document.createElement('div');
+    bubble.style.cssText = 'background:#2563eb;color:#fff;padding:9px 14px;border-radius:12px 12px 3px 12px;font-size:13.5px;max-width:75%;line-height:1.55;white-space:pre-wrap;word-break:break-word';
+    bubble.textContent = content;
+    el.appendChild(bubble);
+  } else {
+    if (parsed?.type === 'chart') {
+      renderQueryChart(parsed.spec, el);
+      if (parsed.commentary) {
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:13px;color:#374151;background:#f9fafb;padding:8px 12px;border-radius:8px;max-width:700px;line-height:1.6;white-space:pre-wrap';
+        note.textContent = parsed.commentary;
+        el.appendChild(note);
+      }
+    } else {
+      const bubble = document.createElement('div');
+      bubble.style.cssText = 'background:#f3f4f6;color:#111;padding:10px 14px;border-radius:12px 12px 12px 3px;font-size:13.5px;max-width:75%;line-height:1.6;white-space:pre-wrap;word-break:break-word';
+      bubble.textContent = content;
+      if (content === '') bubble.innerHTML = '<span style="opacity:.4">▋</span>';
+      el.appendChild(bubble);
+      el._bubble = bubble;
+    }
+  }
+
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}
+
+function getSuggestions() {
+  const s = [];
+  if (state.t12) {
+    s.push('Chart NOI by month');
+    s.push('Chart income vs expenses by month');
+    s.push('Break down operating expenses');
+  }
+  if (state.budget && state.t12) s.push('Budget vs actual NOI');
+  if (state.snapshots.length > 1) s.push('Chart occupancy trend over time');
+  if (state.units.length) {
+    s.push('Which tier has the worst loss-to-lease?');
+    s.push('How many leases expire in the next 90 days?');
+  }
+  if (state.comps.length) s.push('How do my rents compare to comps?');
+  return s.slice(0, 6);
+}
+
+function renderQueries() {
+  const suggestions = document.getElementById('querySuggestions');
+  if (!suggestions) return;
+  suggestions.innerHTML = getSuggestions().map(q =>
+    `<button onclick="submitQuery(${JSON.stringify(q)})"
+      style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer;color:#374151;white-space:nowrap"
+      onmouseover="this.style.background='#e5e7eb'" onmouseout="this.style.background='#f3f4f6'">${q}</button>`
+  ).join('');
+}
+
+async function submitQuery(text) {
+  text = text || document.getElementById('queryInput').value.trim();
+  if (!text || queryStreaming) return;
+  if (!DEAL_ID) { alert('Select a deal first.'); return; }
+  document.getElementById('queryInput').value = '';
+  document.getElementById('queryInput').style.height = 'auto';
+
+  appendQueryMessage('user', text);
+  queryHistory.push({ role: 'user', content: text });
+
+  const deal = DEALS.find(d => d.id === DEAL_ID);
+  const assistantEl = appendQueryMessage('assistant', '');
+  const bubble = assistantEl._bubble;
+  document.getElementById('querySubmitBtn').disabled = true;
+  queryStreaming = true;
+  let accumulated = '';
+
+  try {
+    const res = await fetch('/api/ai-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dealId: DEAL_ID,
+        dealName: deal?.name || '',
+        dealType: deal?.type || 'conventional',
+        messages: queryHistory,
+        enableCharts: true
+      })
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      if (bubble) bubble.textContent = 'Error: ' + (err || res.status);
+    } else {
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += dec.decode(value, { stream: true });
+        if (bubble) bubble.textContent = accumulated.replace(/<chart>[\s\S]*?<\/chart>/g, '').trim() || ' ';
+        document.getElementById('queryMessages').scrollTop = document.getElementById('queryMessages').scrollHeight;
+      }
+      // Replace streaming bubble with final parsed render
+      const parsed = parseQueryResponse(accumulated);
+      assistantEl.remove();
+      appendQueryMessage('assistant', parsed.type === 'text' ? parsed.text : parsed.commentary, parsed);
+      queryHistory.push({ role: 'assistant', content: accumulated });
+    }
+  } catch (e) {
+    if (bubble) bubble.textContent = 'Network error: ' + e.message;
+  } finally {
+    queryStreaming = false;
+    document.getElementById('querySubmitBtn').disabled = false;
+    document.getElementById('queryInput').focus();
+  }
+}
 
 /* ============ Pre-Leasing ============ */
 function renderPreleasing(){
@@ -27074,6 +27284,16 @@ document.getElementById('t12ExportBtn').addEventListener('click',async()=>{
   }catch(e){ alert('Export error: '+e.message); }
   finally{ btn.disabled=false; btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export T-12 to Excel'; }
 });
+// Queries tab input wiring
+document.getElementById('querySubmitBtn').addEventListener('click', () => submitQuery());
+document.getElementById('queryInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitQuery(); }
+});
+document.getElementById('queryInput').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 140) + 'px';
+});
+
 const t12dz=document.getElementById('t12Drop'), t12fi=document.getElementById('t12FileInput');
 t12dz.addEventListener('click',()=>t12fi.click());
 t12fi.addEventListener('change',e=>{if(e.target.files[0])handleT12File(e.target.files[0]);});

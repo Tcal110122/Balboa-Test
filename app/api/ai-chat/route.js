@@ -165,7 +165,7 @@ export async function POST(request) {
   let body
   try { body = await request.json() } catch { return new Response('Bad request', { status: 400 }) }
 
-  const { dealId, dealName, dealType, messages } = body
+  const { dealId, dealName, dealType, messages, enableCharts } = body
   if (!dealId || !messages?.length) return new Response('Bad request', { status: 400 })
   if (!canAccessDeal(auth, dealId)) return new Response('Forbidden', { status: 403 })
 
@@ -176,7 +176,22 @@ export async function POST(request) {
     supabase.from('comp_snapshots').select('comps').eq('deal_id', dealId).order('imported_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const systemPrompt = buildSystemPrompt(dealName || 'this property', dealType || 'conventional', rrRow.data, t12Row.data, budRow.data, compRow.data)
+  let systemPrompt = buildSystemPrompt(dealName || 'this property', dealType || 'conventional', rrRow.data, t12Row.data, budRow.data, compRow.data)
+
+  if (enableCharts) {
+    systemPrompt += `\n\n## CHART RESPONSES
+When the user asks for a chart, graph, trend, or visualization, respond with a JSON chart spec wrapped in <chart></chart> tags, followed by 1-2 sentences of commentary.
+
+Chart spec format:
+<chart>{"type":"line","title":"Chart Title","labels":["Jan 2025","Feb 2025"],"datasets":[{"label":"Series Name","data":[100000,110000],"color":"#2563EB"}]}</chart>
+
+Rules:
+- type: "line" for trends over time, "bar" for comparisons, "pie" for breakdowns
+- data values must be plain numbers (no $ or commas)
+- colors: #2563EB blue, #EF4444 red, #16A34A green, #F59E0B amber, #8B5CF6 purple
+- labels must match data array length exactly
+- for text-only questions, respond normally with no <chart> tag`
+  }
   const userEmail = auth.user.email || auth.user.id
   const question = messages[messages.length - 1]?.content || ''
 

@@ -8,7 +8,7 @@ export async function GET(request) {
 
   let query = supabase
     .from('deals')
-    .select('id, name, market, address, unit_count, status, type, property_manager')
+    .select('id, name, market, address, unit_count, status, type, property_manager, photo_url')
     .order('name')
 
   if (!auth.isAllDeals) {

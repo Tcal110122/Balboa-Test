@@ -27233,13 +27233,54 @@ function renderCover() {
   initCoverMap();
   const cards = document.getElementById('coverCards');
   if (!cards) return;
-  cards.innerHTML = DEALS.map(deal => `
-    <div onclick="openDealFromMap('${deal.id}')" style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow=''">
-      <div style="font-weight:700;font-size:13px;margin-bottom:2px">${deal.name}</div>
-      ${deal.market ? `<div style="font-size:12px;color:#6b7280">${deal.market}</div>` : ''}
-      ${deal.unit_count ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${deal.unit_count} units</div>` : ''}
-      ${deal.status ? `<div style="margin-top:6px"><span style="font-size:11px;background:#e3ede9;color:#1f5c4d;border-radius:4px;padding:2px 7px;font-weight:600">${deal.status}</span></div>` : ''}
-    </div>`).join('');
+  cards.innerHTML = DEALS.map(deal => {
+    const photo = deal.photo_url
+      ? `<img src="${deal.photo_url}" alt="${deal.name}" style="width:100%;height:140px;object-fit:cover;border-radius:8px 8px 0 0;display:block">`
+      : `<div style="width:100%;height:140px;background:linear-gradient(135deg,#1f5c4d 0%,#2d7a67 60%,#b08428 100%);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center">
+           <span style="font-size:28px;opacity:.4">🏢</span>
+         </div>`;
+    return `
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s;position:relative"
+         onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.12)'" onmouseout="this.style.boxShadow=''">
+      <div onclick="openDealFromMap('${deal.id}')">${photo}</div>
+      <div style="padding:12px 14px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div onclick="openDealFromMap('${deal.id}')" style="flex:1">
+            <div style="font-weight:700;font-size:13px;margin-bottom:2px">${deal.name}</div>
+            ${deal.market ? `<div style="font-size:12px;color:#6b7280">${deal.market}</div>` : ''}
+            ${deal.unit_count ? `<div style="font-size:12px;color:#6b7280">${deal.unit_count} units</div>` : ''}
+            ${deal.status ? `<div style="margin-top:5px"><span style="font-size:11px;background:#e3ede9;color:#1f5c4d;border-radius:4px;padding:2px 7px;font-weight:600">${deal.status}</span></div>` : ''}
+          </div>
+          <label title="Upload photo" style="cursor:pointer;flex-shrink:0;padding:4px;border-radius:6px;color:#9ca3af;transition:color .15s" onmouseover="this.style.color='#1f5c4d'" onmouseout="this.style.color='#9ca3af'">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <input type="file" accept="image/*" style="display:none" onchange="uploadCoverPhoto(event,'${deal.id}')">
+          </label>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function uploadCoverPhoto(event, dealId) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const label = event.target.closest('label');
+  const origHtml = label.innerHTML;
+  label.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1f5c4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('deal_id', dealId);
+    const res = await fetch('/api/upload-photo', { method: 'POST', body: fd });
+    if (!res.ok) { alert('Upload failed: ' + await res.text()); label.innerHTML = origHtml; return; }
+    const { url } = await res.json();
+    const deal = DEALS.find(d => d.id === dealId);
+    if (deal) deal.photo_url = url;
+    renderCover();
+  } catch(e) {
+    alert('Upload error: ' + e.message);
+    label.innerHTML = origHtml;
+  }
 }
 
 /* ============ Queries Tab ============ */

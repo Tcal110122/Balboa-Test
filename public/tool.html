@@ -27123,7 +27123,7 @@ function renderQueries() {
   const suggestions = document.getElementById('querySuggestions');
   if (suggestions) {
     suggestions.innerHTML = getSuggestions().map(q =>
-      `<button onclick="submitQuery(${JSON.stringify(q)})"
+      `<button onclick='submitQuery(${JSON.stringify(q)})'
         style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer;color:#374151;white-space:nowrap"
         onmouseover="this.style.background='#e5e7eb'" onmouseout="this.style.background='#f3f4f6'">${q}</button>`
     ).join('');

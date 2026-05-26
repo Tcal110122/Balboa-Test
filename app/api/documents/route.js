@@ -118,8 +118,8 @@ export async function POST(request) {
   })
   if (dbErr) return new Response(dbErr.message, { status: 500 })
 
-  // Fire-and-forget email notification to all deal users
-  sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail: auth.user.email || '' })
+  // Await notification before responding — Vercel kills the function on response, so fire-and-forget never executes
+  await sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail: auth.user.email || '' })
 
   return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
 }

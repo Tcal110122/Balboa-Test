@@ -15,8 +15,17 @@ export async function GET(request) {
     .from('rent_roll_snapshots')
     .select('as_of_date, units')
     .eq('deal_id', dealId)
-    .order('as_of_date', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Sort by parsed date — dates stored as MM/DD/YYYY so string order is wrong
+  const parseRrDate = s => {
+    if (!s) return 0
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s).getTime()
+    const [m, d, y] = s.split('/')
+    return new Date(+y, +m - 1, +d).getTime()
+  }
+  ;(data || []).sort((a, b) => parseRrDate(b.as_of_date) - parseRrDate(a.as_of_date))
+
   return NextResponse.json(data || [])
 }

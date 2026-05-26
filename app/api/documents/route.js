@@ -15,46 +15,38 @@ function adminClient() {
 // and fires the notification. Never throws — email failure must not affect uploads.
 async function sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail }) {
   try {
-    console.log('[email] starting notification for deal', dealId, 'uploader', uploaderEmail)
+    const { data: deal } = await admin.from('deals').select('name').eq('id', dealId).maybeSingle()
 
-    const [{ data: partners, error: pErr }, { data: sponsorOrgs, error: sErr }, { data: deal }] = await Promise.all([
-      admin.from('deal_partners').select('org_id').eq('deal_id', dealId),
-      admin.from('organizations').select('id').eq('type', 'sponsor'),
-      admin.from('deals').select('name').eq('id', dealId).maybeSingle(),
-    ])
-    if (pErr) console.log('[email] deal_partners error:', pErr.message)
-    if (sErr) console.log('[email] organizations error:', sErr.message)
+    // Build recipient list: start with uploader, then add any other users with deal access
+    const emailSet = new Set()
+    if (uploaderEmail) emailSet.add(uploaderEmail)
 
-    const orgIds = [
-      ...new Set([
+    try {
+      const [{ data: partners }, { data: sponsorOrgs }] = await Promise.all([
+        admin.from('deal_partners').select('org_id').eq('deal_id', dealId),
+        admin.from('organizations').select('id').eq('type', 'sponsor'),
+      ])
+      const orgIds = [...new Set([
         ...(partners || []).map(p => p.org_id),
         ...(sponsorOrgs || []).map(o => o.id),
-      ])
-    ]
-    console.log('[email] orgIds:', orgIds)
-
-    const { data: profiles, error: prErr } = await admin.from('profiles').select('id').in('org_id', orgIds)
-    if (prErr) console.log('[email] profiles error:', prErr.message)
-    const userIds = new Set((profiles || []).map(p => p.id))
-    console.log('[email] userIds count:', userIds.size)
-
-    const { data: authData, error: auErr } = await admin.auth.admin.listUsers({ perPage: 1000 })
-    if (auErr) console.log('[email] listUsers error:', auErr.message)
-    const recipientEmails = (authData?.users || [])
-      .filter(u => userIds.has(u.id) && u.email)
-      .map(u => u.email)
-    console.log('[email] recipients:', recipientEmails)
+      ])]
+      if (orgIds.length) {
+        const { data: profiles } = await admin.from('profiles').select('id').in('org_id', orgIds)
+        const userIds = new Set((profiles || []).map(p => p.id))
+        const { data: authData } = await admin.auth.admin.listUsers({ perPage: 1000 })
+        ;(authData?.users || []).filter(u => userIds.has(u.id) && u.email).forEach(u => emailSet.add(u.email))
+      }
+    } catch (_) {}
 
     await notifyDocumentUpload({
       dealName: deal?.name || dealId,
       docName: name,
       category,
       uploaderEmail,
-      recipientEmails,
+      recipientEmails: [...emailSet],
     })
-    console.log('[email] notifyDocumentUpload completed')
   } catch (err) {
-    console.error('[email] Document notification failed:', err)
+    console.error('[email] notification failed:', err.message)
   }
 }
 

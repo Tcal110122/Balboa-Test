@@ -24,7 +24,7 @@ export async function POST(request) {
 
     const { error } = await supabase
       .from('comp_snapshots')
-      .insert({ deal_id: dealId, comps: parsed.comps, count: parsed.count })
+      .upsert({ deal_id: dealId, comps: parsed.comps, count: parsed.count, imported_at: new Date().toISOString() }, { onConflict: 'deal_id' })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

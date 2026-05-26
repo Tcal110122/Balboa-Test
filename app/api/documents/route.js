@@ -42,7 +42,9 @@ export async function GET(request) {
 export async function POST(request) {
   const auth = await requireAuth(request)
   if (!auth) return new Response('Unauthorized', { status: 401 })
-  if (!auth.isAllDeals) return new Response('Forbidden — only sponsor accounts can upload documents', { status: 403 })
+  const email = auth.user.email || ''
+  const canUpload = auth.isAllDeals || email.toLowerCase().endsWith('@thebalboagroup.com')
+  if (!canUpload) return new Response('Forbidden — upload requires a Balboa Group account', { status: 403 })
 
   let formData
   try { formData = await request.formData() } catch { return new Response('Bad request', { status: 400 }) }

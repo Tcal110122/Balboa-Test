@@ -14,10 +14,10 @@ function adminClient() {
 // Resolves emails for all users who have access to a deal (partners + sponsors)
 // and fires the notification. Never throws — email failure must not affect uploads.
 async function sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail }) {
+  const debug = { uploaderEmail, recipientEmails: [], resendResult: null, error: null }
   try {
     const { data: deal } = await admin.from('deals').select('name').eq('id', dealId).maybeSingle()
 
-    // Build recipient list: start with uploader, then add any other users with deal access
     const emailSet = new Set()
     if (uploaderEmail) emailSet.add(uploaderEmail)
 
@@ -36,18 +36,18 @@ async function sendDocumentNotificationAsync({ admin, dealId, name, category, up
         const { data: authData } = await admin.auth.admin.listUsers({ perPage: 1000 })
         ;(authData?.users || []).filter(u => userIds.has(u.id) && u.email).forEach(u => emailSet.add(u.email))
       }
-    } catch (_) {}
+    } catch (e) { debug.lookupError = e.message }
 
-    await notifyDocumentUpload({
+    debug.recipientEmails = [...emailSet]
+    debug.resendResult = await notifyDocumentUpload({
       dealName: deal?.name || dealId,
-      docName: name,
-      category,
-      uploaderEmail,
+      docName: name, category, uploaderEmail,
       recipientEmails: [...emailSet],
     })
   } catch (err) {
-    console.error('[email] notification failed:', err.message)
+    debug.error = err.message
   }
+  return debug
 }
 
 export async function GET(request) {
@@ -120,8 +120,7 @@ export async function POST(request) {
   })
   if (dbErr) return new Response(dbErr.message, { status: 500 })
 
-  // Await notification before responding — Vercel kills the function on response, so fire-and-forget never executes
-  await sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail: auth.user.email || '' })
+  const emailDebug = await sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail: auth.user.email || '' })
 
-  return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
+  return new Response(JSON.stringify({ ok: true, emailDebug }), { headers: { 'Content-Type': 'application/json' } })
 }

@@ -712,39 +712,14 @@
     <div class="toolbar">
       <h2 style="font-size:14px">Partnership Documents</h2>
       <div class="grow"></div>
-      <button class="btn" id="docUploadBtn">+ Upload Document</button>
     </div>
 
-    <!-- Upload form (hidden by default) -->
-    <div id="docUploadForm" style="display:none" class="card">
-      <div class="card-bd" style="padding:16px 18px">
-        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end">
-          <label class="fld">
-            <span>Document name</span>
-            <input id="docName" type="text" placeholder="e.g. Q1 2025 K-1 — Pine 25" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:7px 10px;font-size:13px">
-          </label>
-          <label class="fld">
-            <span>Category</span>
-            <select id="docCategory" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:7px 10px;font-size:13px;background:#fff">
-              <option>K-1</option>
-              <option>Operating Statement</option>
-              <option>Distribution Notice</option>
-              <option>Capital Call</option>
-              <option>Tax Return</option>
-              <option>Other</option>
-            </select>
-          </label>
-          <div style="display:flex;gap:8px">
-            <label style="cursor:pointer">
-              <span id="docFileLabel" style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:7px 14px;font-size:13px;white-space:nowrap">Choose file</span>
-              <input id="docFile" type="file" accept=".pdf,.xlsx,.xls,.docx,.csv,.png,.jpg,.jpeg" style="display:none" onchange="docFileChosen(this)">
-            </label>
-            <button class="btn" onclick="submitDocUpload()">Upload</button>
-            <button class="btn subtle" onclick="document.getElementById('docUploadForm').style.display='none'">Cancel</button>
-          </div>
-        </div>
-        <div id="docUploadStatus" style="margin-top:8px;font-size:12.5px;color:#6b7280"></div>
-      </div>
+    <!-- Drop zone -->
+    <div id="docDropzone" style="border:2px dashed #d1d5db;border-radius:10px;padding:36px 24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;margin-bottom:16px;background:#fafafa">
+      <div style="font-size:28px;margin-bottom:8px">📂</div>
+      <div style="font-weight:600;font-size:14px;color:#374151;margin-bottom:4px">Drop files here to upload</div>
+      <div style="font-size:12.5px;color:#9ca3af">or <span style="color:#1f5c4d;text-decoration:underline;cursor:pointer" id="docBrowseLink">browse files</span> — PDF, Excel, Word, CSV, images</div>
+      <input id="docFile" type="file" accept=".pdf,.xlsx,.xls,.docx,.csv,.png,.jpg,.jpeg" style="display:none" onclick="this.value=''">
     </div>
 
     <!-- Filter bar -->
@@ -753,6 +728,32 @@
     <!-- Document list -->
     <div class="card">
       <div class="card-bd" id="docList" style="padding:0"></div>
+    </div>
+  </div>
+
+  <!-- Document tag modal -->
+  <div id="docModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:none;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:28px;width:100%;max-width:460px;box-shadow:0 8px 40px rgba(0,0,0,.18);margin:16px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:18px">Tag this document</h3>
+      <div id="docModalFile" style="display:flex;align-items:center;gap:10px;background:#f9fafb;border-radius:8px;padding:10px 12px;margin-bottom:18px">
+        <span id="docModalIcon" style="font-size:22px"></span>
+        <div style="min-width:0">
+          <div id="docModalFilename" style="font-size:12.5px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+        </div>
+      </div>
+      <label class="fld" style="margin-bottom:16px">
+        <span>Document name</span>
+        <input id="docName" type="text" placeholder="e.g. Q1 2025 K-1 — Pine 25" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px 11px;font-size:13.5px;outline:none" onfocus="this.style.borderColor='#1f5c4d'" onblur="this.style.borderColor='#d1d5db'">
+      </label>
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Category</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px" id="docCategoryChips"></div>
+      </div>
+      <div id="docUploadStatus" style="font-size:12.5px;color:#dc2626;margin-bottom:10px;min-height:18px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn subtle" onclick="closeDocModal()">Cancel</button>
+        <button class="btn" onclick="submitDocUpload()">Upload</button>
+      </div>
     </div>
   </div>
 
@@ -27213,27 +27214,67 @@ function renderAll(){ renderDashboard(); renderRanking(); renderLeasing(); rende
 
 /* ============ Documents Tab ============ */
 let docActiveCategory = 'All';
+let docPendingFile = null;
+let docSelectedCategory = 'K-1';
 
-document.getElementById('docUploadBtn').addEventListener('click', () => {
-  const form = document.getElementById('docUploadForm');
-  form.style.display = form.style.display === 'none' ? '' : 'none';
-  if (form.style.display !== 'none') document.getElementById('docName').focus();
-});
+const DOC_CATEGORIES = ['K-1','Operating Statement','Distribution Notice','Capital Call','Tax Return','Other'];
 
-function docFileChosen(input) {
-  const label = document.getElementById('docFileLabel');
-  label.textContent = input.files[0]?.name || 'Choose file';
-  if (!document.getElementById('docName').value && input.files[0]) {
-    document.getElementById('docName').value = input.files[0].name.replace(/\.[^.]+$/, '');
-  }
+function initDocDropzone() {
+  const zone = document.getElementById('docDropzone');
+  const input = document.getElementById('docFile');
+  if (!zone || !input) return;
+
+  document.getElementById('docBrowseLink').addEventListener('click', () => input.click());
+  zone.addEventListener('click', e => { if (e.target !== document.getElementById('docBrowseLink')) input.click(); });
+  input.addEventListener('change', () => { if (input.files[0]) openDocModal(input.files[0]); });
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = '#1f5c4d'; zone.style.background = '#f0faf6'; });
+  zone.addEventListener('dragleave', () => { zone.style.borderColor = '#d1d5db'; zone.style.background = '#fafafa'; });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.style.borderColor = '#d1d5db'; zone.style.background = '#fafafa';
+    const file = e.dataTransfer.files[0];
+    if (file) openDocModal(file);
+  });
+}
+
+function openDocModal(file) {
+  docPendingFile = file;
+  docSelectedCategory = 'K-1';
+  document.getElementById('docModalIcon').textContent = docIcon(file.type);
+  document.getElementById('docModalFilename').textContent = file.name + ' · ' + fmtSize(file.size);
+  document.getElementById('docName').value = file.name.replace(/\.[^.]+$/, '');
+  document.getElementById('docUploadStatus').textContent = '';
+  renderCategoryChips();
+  const modal = document.getElementById('docModal');
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('docName').select(), 50);
+}
+
+function closeDocModal() {
+  document.getElementById('docModal').style.display = 'none';
+  document.getElementById('docFile').value = '';
+  docPendingFile = null;
+}
+
+function renderCategoryChips() {
+  document.getElementById('docCategoryChips').innerHTML = DOC_CATEGORIES.map(c => {
+    const col = CATEGORY_COLORS[c] || '#6B7280';
+    const active = c === docSelectedCategory;
+    return `<button onclick="selectDocCategory('${c}')" style="border:2px solid ${active ? col : '#e5e7eb'};background:${active ? col : '#fff'};color:${active ? '#fff' : '#374151'};border-radius:20px;padding:5px 14px;font-size:12.5px;cursor:pointer;font-weight:${active ? 600 : 400};transition:all .12s">${c}</button>`;
+  }).join('');
+}
+
+function selectDocCategory(cat) {
+  docSelectedCategory = cat;
+  renderCategoryChips();
 }
 
 async function submitDocUpload() {
-  const file = document.getElementById('docFile').files[0];
+  const file = docPendingFile;
   const name = document.getElementById('docName').value.trim();
-  const category = document.getElementById('docCategory').value;
   const status = document.getElementById('docUploadStatus');
-  if (!file) { status.textContent = 'Please choose a file.'; return; }
+  if (!file) { status.textContent = 'No file selected.'; return; }
   if (!name) { status.textContent = 'Please enter a document name.'; return; }
   if (!DEAL_ID) { status.textContent = 'No deal selected.'; return; }
   status.textContent = 'Uploading…';
@@ -27241,15 +27282,11 @@ async function submitDocUpload() {
   fd.append('file', file);
   fd.append('deal_id', DEAL_ID);
   fd.append('name', name);
-  fd.append('category', category);
+  fd.append('category', docSelectedCategory);
   try {
     const res = await fetch('/api/documents', { method: 'POST', body: fd });
     if (!res.ok) { status.textContent = 'Error: ' + await res.text(); return; }
-    status.textContent = '';
-    document.getElementById('docUploadForm').style.display = 'none';
-    document.getElementById('docFile').value = '';
-    document.getElementById('docFileLabel').textContent = 'Choose file';
-    document.getElementById('docName').value = '';
+    closeDocModal();
     renderDocuments();
   } catch(e) { status.textContent = 'Upload failed: ' + e.message; }
 }
@@ -27285,6 +27322,7 @@ const CATEGORY_COLORS = {
 };
 
 async function renderDocuments() {
+  initDocDropzone();
   const list = document.getElementById('docList');
   const filters = document.getElementById('docFilters');
   if (!list) return;

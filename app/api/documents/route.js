@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, canAccessDeal } from '@/lib/auth'
+import { notifyDocumentUpload } from '@/lib/email'
 
 const BUCKET = 'partnership-docs'
 
@@ -8,6 +9,43 @@ function adminClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   )
+}
+
+// Resolves emails for all users who have access to a deal (partners + sponsors)
+// and fires the notification. Never throws — email failure must not affect uploads.
+async function sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail }) {
+  try {
+    const [{ data: partners }, { data: sponsorOrgs }, { data: deal }] = await Promise.all([
+      admin.from('deal_partners').select('org_id').eq('deal_id', dealId),
+      admin.from('organizations').select('id').eq('type', 'sponsor'),
+      admin.from('deals').select('name').eq('id', dealId).maybeSingle(),
+    ])
+
+    const orgIds = [
+      ...new Set([
+        ...(partners || []).map(p => p.org_id),
+        ...(sponsorOrgs || []).map(o => o.id),
+      ])
+    ]
+
+    const { data: profiles } = await admin.from('profiles').select('id').in('org_id', orgIds)
+    const userIds = new Set((profiles || []).map(p => p.id))
+
+    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
+    const recipientEmails = users
+      .filter(u => userIds.has(u.id) && u.email)
+      .map(u => u.email)
+
+    await notifyDocumentUpload({
+      dealName: deal?.name || dealId,
+      docName: name,
+      category,
+      uploaderEmail,
+      recipientEmails,
+    })
+  } catch (err) {
+    console.error('[email] Document notification failed:', err)
+  }
 }
 
 export async function GET(request) {
@@ -79,6 +117,9 @@ export async function POST(request) {
     uploaded_by_email: auth.user.email || auth.user.id,
   })
   if (dbErr) return new Response(dbErr.message, { status: 500 })
+
+  // Fire-and-forget email notification to all deal users
+  sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail: auth.user.email || '' })
 
   return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
 }

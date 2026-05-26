@@ -24162,40 +24162,22 @@ function handleFile(file){
         showParseReport('<div class="hint warn"><b>No units found.</b> Make sure this is a Yardi, OneSite, or Entrata rent roll export.</div>');
         return;
       }
-      state.rrDate=parsed.asOf||today();
-      state.units=parsed.units;
-      // auto-save this rent roll as a dated snapshot for the trend engine
-      const snap=buildSnapshot();
-      const sidx=state.snapshots.findIndex(s=>s.rrDate===snap.rrDate);
-      let snapMsg='';
-      if(sidx>=0){
-        state.snapshots[sidx]=snap;
-        snapMsg='Snapshot for '+snap.rrDate+' updated.';
-      } else {
-        state.snapshots.push(snap);
-        snapMsg='Snapshot for '+snap.rrDate+' added to the trend.';
-      }
-      state.snapshots.sort((a,b)=>(b.rrDate||'').localeCompare(a.rrDate||''));
-      save();
-      if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rentroll',{method:'POST',body:fd}).catch(()=>{});}
+      // Show date confirmation before committing — parser sometimes extracts wrong date
       const occ=parsed.units.filter(u=>!u.vacant).length;
       const vac=parsed.units.filter(u=>u.vacant).length;
+      const detectedDate=parsed.asOf||today();
+      const toInputDate=s=>{if(!s)return'';if(/^\d{4}-/.test(s))return s;const[m,d,y]=s.split('/');return`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;};
+      window._pendingRR={parsed,file};
       showParseReport(`
-        <div class="hint"><b>Rent roll loaded.</b> Parsed <b>${parsed.units.length}</b> physical units
-        (${occ} occupied, ${vac} vacant) as of <b>${state.rrDate}</b>.
-        ${parsed.skipped>0?parsed.skipped+' blank/non-unit rows skipped. ':''}
-        ${parsed.dupCount>0?'<b>'+parsed.dupCount+' future-lease line(s)</b> were merged into their current units (a unit is counted once). ':''}
-        ${snapMsg} Open the <b>Oversight Dashboard</b> or <b>Trends</b> tab.</div>
-        ${parsed.preleasedVacant>0?`<div class="hint"><b>${parsed.preleasedVacant} vacant unit(s) are pre-leased</b> —
-        physically vacant today but with a signed future lease. The dashboard shows both physical
-        and leased occupancy to reflect this.</div>`:''}
-        ${parsed.reviewCount>0?`<div class="hint warn"><b>${parsed.reviewCount} unit(s) flagged for review.</b>
-        These had no <code>rent</code> charge code, so base rent was derived as Total minus fees —
-        but a negative fee (likely a booked concession/credit) or an off-market result makes the
-        derived figure unreliable. Filter to them on the <b>Unit Detail</b> tab and confirm against
-        Yardi before relying on their loss-to-lease.</div>`:''}`);
-      renderAll();
-      updateHdr();
+        <div class="hint" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px">
+          <span>Parsed <b>${parsed.units.length}</b> units (${occ} occupied, ${vac} vacant). Confirm the rent roll date:</span>
+          <input type="date" id="rrDateInput" value="${toInputDate(detectedDate)}"
+            style="border:1px solid #6366f1;border-radius:6px;padding:4px 8px;font-size:13px">
+          <button onclick="commitRentRoll()"
+            style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-size:13px;cursor:pointer;font-weight:600">
+            Confirm &amp; Save
+          </button>
+        </div>`);
     }catch(err){
       showParseReport('<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>');
     }
@@ -24203,6 +24185,36 @@ function handleFile(file){
   reader.readAsArrayBuffer(file);
 }
 function showParseReport(html){ document.getElementById('parseReport').innerHTML=html; }
+
+function commitRentRoll(){
+  const inp=document.getElementById('rrDateInput');
+  if(!inp||!window._pendingRR) return;
+  const [y,m,d]=inp.value.split('-');
+  if(!y||!m||!d){inp.style.borderColor='#dc2626';return;}
+  const rrDate=`${m}/${d}/${y}`;
+  const{parsed,file}=window._pendingRR;
+  window._pendingRR=null;
+
+  state.rrDate=rrDate;
+  state.units=parsed.units;
+  const snap=buildSnapshot();
+  const sidx=state.snapshots.findIndex(s=>s.rrDate===snap.rrDate);
+  let snapMsg='';
+  if(sidx>=0){ state.snapshots[sidx]=snap; snapMsg='Snapshot for '+snap.rrDate+' updated.'; }
+  else { state.snapshots.push(snap); snapMsg='Snapshot for '+snap.rrDate+' added to the trend.'; }
+  state.snapshots.sort((a,b)=>(b.rrDate||'').localeCompare(a.rrDate||''));
+  save();
+  if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-rentroll',{method:'POST',body:fd}).catch(()=>{});}
+  showParseReport(`
+    <div class="hint"><b>Rent roll loaded.</b> Parsed <b>${parsed.units.length}</b> units as of <b>${rrDate}</b>.
+    ${parsed.skipped>0?parsed.skipped+' blank/non-unit rows skipped. ':''}
+    ${parsed.dupCount>0?'<b>'+parsed.dupCount+' future-lease line(s)</b> were merged. ':''}
+    ${snapMsg} Open the <b>Oversight Dashboard</b> or <b>Trends</b> tab.</div>
+    ${parsed.preleasedVacant>0?`<div class="hint"><b>${parsed.preleasedVacant} vacant unit(s) are pre-leased</b> — physically vacant with a signed future lease.</div>`:''}
+    ${parsed.reviewCount>0?`<div class="hint warn"><b>${parsed.reviewCount} unit(s) flagged for review.</b> Filter to them on the <b>Unit Detail</b> tab and confirm against Yardi.</div>`:''}`);
+  renderAll();
+  updateHdr();
+}
 
 // Parses the "Unit-Level Data" sheet — per-unit detail with REAL square footage,
 // asking rent, effective rent and PSF, grouped by named property. This sheet is

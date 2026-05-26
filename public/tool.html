@@ -26400,7 +26400,7 @@ function applyUnitFilters(){
     const status=u.vacant?'<span class="pill amber">Vacant</span>':'<span class="pill green">Occupied</span>';
     const dt=u.leaseExp?new Date(u.leaseExp+'T00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
     const ipCell=u.inplaceReview
-      ? `${money(u.inplace)} <span class="pill red" style="cursor:pointer" title="Click to correct in-place rent" onclick="correctUnitRent(${JSON.stringify(u.unit)})">review</span>`
+      ? `<span id="ipcell-${u.unit.replace(/[^a-z0-9]/gi,'_')}" style="display:flex;align-items:center;gap:4px">${money(u.inplace)}<span class="pill red" style="cursor:pointer" title="Click to correct in-place rent" onclick="correctUnitRent(${JSON.stringify(u.unit)})">review</span></span>`
       : `<span class="calc strong">${money(u.inplace)}</span>`;
     tb.innerHTML+=`<tr>
       <td class="l" style="font-weight:600">${u.unit}</td>
@@ -26420,11 +26420,28 @@ function applyUnitFilters(){
 function correctUnitRent(unitId) {
   const u = state.units.find(x => x.unit === unitId);
   if (!u) return;
+  const cellId = 'ipcell-' + unitId.replace(/[^a-z0-9]/gi,'_');
+  const cell = document.getElementById(cellId);
+  if (!cell) return;
   const current = u.inplace != null ? Math.round(u.inplace) : '';
-  const input = prompt(`Correct in-place rent for unit ${unitId}:\n(Current: ${current ? '$'+current : 'blank'})`, current);
-  if (input === null) return; // cancelled
-  const val = parseFloat(String(input).replace(/[^0-9.]/g, ''));
-  if (isNaN(val) || val <= 0) { alert('Please enter a valid rent amount.'); return; }
+  cell.innerHTML = `
+    <input id="ipedit-${cellId}" type="number" value="${current}" min="1" step="1"
+      style="width:80px;padding:2px 6px;border:1px solid #6366f1;border-radius:4px;font-size:13px;outline:none"
+      onkeydown="if(event.key==='Enter')saveUnitRent(${JSON.stringify(unitId)});if(event.key==='Escape')applyUnitFilters()">
+    <button onclick="saveUnitRent(${JSON.stringify(unitId)})" style="background:#6366f1;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer">✓</button>
+    <button onclick="applyUnitFilters()" style="background:#e5e7eb;color:#374151;border:none;border-radius:4px;padding:2px 6px;font-size:12px;cursor:pointer">✕</button>`;
+  const inp = document.getElementById('ipedit-' + cellId);
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+function saveUnitRent(unitId) {
+  const cellId = 'ipcell-' + unitId.replace(/[^a-z0-9]/gi,'_');
+  const inp = document.getElementById('ipedit-' + cellId);
+  if (!inp) return;
+  const val = parseFloat(inp.value);
+  if (isNaN(val) || val <= 0) { inp.style.borderColor='#dc2626'; return; }
+  const u = state.units.find(x => x.unit === unitId);
+  if (!u) return;
   u.inplace = val;
   u.inplaceReview = false;
   save();

@@ -15,11 +15,15 @@ function adminClient() {
 // and fires the notification. Never throws — email failure must not affect uploads.
 async function sendDocumentNotificationAsync({ admin, dealId, name, category, uploaderEmail }) {
   try {
-    const [{ data: partners }, { data: sponsorOrgs }, { data: deal }] = await Promise.all([
+    console.log('[email] starting notification for deal', dealId, 'uploader', uploaderEmail)
+
+    const [{ data: partners, error: pErr }, { data: sponsorOrgs, error: sErr }, { data: deal }] = await Promise.all([
       admin.from('deal_partners').select('org_id').eq('deal_id', dealId),
       admin.from('organizations').select('id').eq('type', 'sponsor'),
       admin.from('deals').select('name').eq('id', dealId).maybeSingle(),
     ])
+    if (pErr) console.log('[email] deal_partners error:', pErr.message)
+    if (sErr) console.log('[email] organizations error:', sErr.message)
 
     const orgIds = [
       ...new Set([
@@ -27,14 +31,19 @@ async function sendDocumentNotificationAsync({ admin, dealId, name, category, up
         ...(sponsorOrgs || []).map(o => o.id),
       ])
     ]
+    console.log('[email] orgIds:', orgIds)
 
-    const { data: profiles } = await admin.from('profiles').select('id').in('org_id', orgIds)
+    const { data: profiles, error: prErr } = await admin.from('profiles').select('id').in('org_id', orgIds)
+    if (prErr) console.log('[email] profiles error:', prErr.message)
     const userIds = new Set((profiles || []).map(p => p.id))
+    console.log('[email] userIds count:', userIds.size)
 
-    const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-    const recipientEmails = users
+    const { data: authData, error: auErr } = await admin.auth.admin.listUsers({ perPage: 1000 })
+    if (auErr) console.log('[email] listUsers error:', auErr.message)
+    const recipientEmails = (authData?.users || [])
       .filter(u => userIds.has(u.id) && u.email)
       .map(u => u.email)
+    console.log('[email] recipients:', recipientEmails)
 
     await notifyDocumentUpload({
       dealName: deal?.name || dealId,
@@ -43,6 +52,7 @@ async function sendDocumentNotificationAsync({ admin, dealId, name, category, up
       uploaderEmail,
       recipientEmails,
     })
+    console.log('[email] notifyDocumentUpload completed')
   } catch (err) {
     console.error('[email] Document notification failed:', err)
   }

@@ -235,6 +235,7 @@
   <button class="tab" data-tab="units">Unit Detail</button>
   <button class="tab" data-tab="trends">Trends</button>
   <button class="tab" data-tab="history">Period History</button>
+  <button class="tab" data-tab="documents">Documents</button>
   <button class="tab" data-tab="queries">Queries</button>
 </div>
 
@@ -703,6 +704,55 @@
         </div>
         <div class="card-bd" id="trendExpiry"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- DOCUMENTS -->
+  <div class="panel" id="panel-documents">
+    <div class="toolbar">
+      <h2 style="font-size:14px">Partnership Documents</h2>
+      <div class="grow"></div>
+      <button class="btn" id="docUploadBtn">+ Upload Document</button>
+    </div>
+
+    <!-- Upload form (hidden by default) -->
+    <div id="docUploadForm" style="display:none" class="card">
+      <div class="card-bd" style="padding:16px 18px">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end">
+          <label class="fld">
+            <span>Document name</span>
+            <input id="docName" type="text" placeholder="e.g. Q1 2025 K-1 — Pine 25" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:7px 10px;font-size:13px">
+          </label>
+          <label class="fld">
+            <span>Category</span>
+            <select id="docCategory" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:7px 10px;font-size:13px;background:#fff">
+              <option>K-1</option>
+              <option>Operating Statement</option>
+              <option>Distribution Notice</option>
+              <option>Capital Call</option>
+              <option>Tax Return</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <div style="display:flex;gap:8px">
+            <label style="cursor:pointer">
+              <span id="docFileLabel" style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:7px 14px;font-size:13px;white-space:nowrap">Choose file</span>
+              <input id="docFile" type="file" accept=".pdf,.xlsx,.xls,.docx,.csv,.png,.jpg,.jpeg" style="display:none" onchange="docFileChosen(this)">
+            </label>
+            <button class="btn" onclick="submitDocUpload()">Upload</button>
+            <button class="btn subtle" onclick="document.getElementById('docUploadForm').style.display='none'">Cancel</button>
+          </div>
+        </div>
+        <div id="docUploadStatus" style="margin-top:8px;font-size:12.5px;color:#6b7280"></div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="docFilters"></div>
+
+    <!-- Document list -->
+    <div class="card">
+      <div class="card-bd" id="docList" style="padding:0"></div>
     </div>
   </div>
 
@@ -27152,6 +27202,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='income') renderIncome();
     if(t.dataset.tab==='trends') renderTrends();
     if(t.dataset.tab==='history') renderHistory();
+    if(t.dataset.tab==='documents') renderDocuments();
     if(t.dataset.tab==='preleasing') renderPreleasing();
     if(t.dataset.tab==='queries') renderQueries();
     if(t.dataset.tab==='cover'){ renderCover(); setTimeout(()=>{ if(coverMap) coverMap.invalidateSize(); },200); }
@@ -27159,6 +27210,138 @@ document.querySelectorAll('.tab').forEach(t=>{
 });
 
 function renderAll(){ renderDashboard(); renderRanking(); renderLeasing(); renderComps(); renderFloorplans(); renderRenewals(); renderIncome(); renderUnits(); renderTrends(); renderHistory(); renderPreleasing(); renderQueries(); }
+
+/* ============ Documents Tab ============ */
+let docActiveCategory = 'All';
+
+document.getElementById('docUploadBtn').addEventListener('click', () => {
+  const form = document.getElementById('docUploadForm');
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+  if (form.style.display !== 'none') document.getElementById('docName').focus();
+});
+
+function docFileChosen(input) {
+  const label = document.getElementById('docFileLabel');
+  label.textContent = input.files[0]?.name || 'Choose file';
+  if (!document.getElementById('docName').value && input.files[0]) {
+    document.getElementById('docName').value = input.files[0].name.replace(/\.[^.]+$/, '');
+  }
+}
+
+async function submitDocUpload() {
+  const file = document.getElementById('docFile').files[0];
+  const name = document.getElementById('docName').value.trim();
+  const category = document.getElementById('docCategory').value;
+  const status = document.getElementById('docUploadStatus');
+  if (!file) { status.textContent = 'Please choose a file.'; return; }
+  if (!name) { status.textContent = 'Please enter a document name.'; return; }
+  if (!DEAL_ID) { status.textContent = 'No deal selected.'; return; }
+  status.textContent = 'Uploading…';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('deal_id', DEAL_ID);
+  fd.append('name', name);
+  fd.append('category', category);
+  try {
+    const res = await fetch('/api/documents', { method: 'POST', body: fd });
+    if (!res.ok) { status.textContent = 'Error: ' + await res.text(); return; }
+    status.textContent = '';
+    document.getElementById('docUploadForm').style.display = 'none';
+    document.getElementById('docFile').value = '';
+    document.getElementById('docFileLabel').textContent = 'Choose file';
+    document.getElementById('docName').value = '';
+    renderDocuments();
+  } catch(e) { status.textContent = 'Upload failed: ' + e.message; }
+}
+
+async function deleteDocument(id) {
+  if (!confirm('Delete this document? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/documents/' + id, { method: 'DELETE' });
+    if (!res.ok) { alert('Delete failed: ' + await res.text()); return; }
+    renderDocuments();
+  } catch(e) { alert('Delete failed: ' + e.message); }
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function docIcon(type) {
+  if (!type) return '📄';
+  if (type.includes('pdf')) return '📕';
+  if (type.includes('sheet') || type.includes('excel') || type.includes('csv')) return '📗';
+  if (type.includes('word') || type.includes('doc')) return '📘';
+  if (type.includes('image')) return '🖼';
+  return '📄';
+}
+
+const CATEGORY_COLORS = {
+  'K-1': '#7C3AED', 'Operating Statement': '#2563EB', 'Distribution Notice': '#16A34A',
+  'Capital Call': '#D97706', 'Tax Return': '#DC2626', 'Other': '#6B7280'
+};
+
+async function renderDocuments() {
+  const list = document.getElementById('docList');
+  const filters = document.getElementById('docFilters');
+  if (!list) return;
+  if (!DEAL_ID) { list.innerHTML = '<div class="empty" style="padding:24px">Select a deal to view documents.</div>'; return; }
+  list.innerHTML = '<div style="padding:16px;color:#9ca3af;font-size:13px">Loading…</div>';
+  try {
+    const res = await fetch('/api/documents?deal_id=' + DEAL_ID);
+    if (!res.ok) { list.innerHTML = '<div class="empty" style="padding:24px">Error loading documents.</div>'; return; }
+    const docs = await res.json();
+
+    // Build category filter chips
+    const cats = ['All', ...new Set(docs.map(d => d.category).filter(Boolean))];
+    if (filters) {
+      filters.innerHTML = cats.map(c => {
+        const active = c === docActiveCategory;
+        const col = CATEGORY_COLORS[c] || '#6B7280';
+        return `<button onclick="docSetCategory('${c}')" style="border:1px solid ${active ? col : '#e5e7eb'};background:${active ? col : '#fff'};color:${active ? '#fff' : '#374151'};border-radius:20px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:${active ? 600 : 400}">${c}</button>`;
+      }).join('');
+    }
+
+    const filtered = docActiveCategory === 'All' ? docs : docs.filter(d => d.category === docActiveCategory);
+
+    if (!filtered.length) {
+      list.innerHTML = `<div class="empty" style="padding:32px;text-align:center;color:#9ca3af">
+        ${docs.length ? 'No documents in this category.' : 'No documents uploaded yet. Click <b>+ Upload Document</b> to get started.'}
+      </div>`; return;
+    }
+
+    list.innerHTML = filtered.map(doc => {
+      const col = CATEGORY_COLORS[doc.category] || '#6B7280';
+      const date = doc.created_at ? new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      return `<div style="display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid #f3f4f6">
+        <span style="font-size:22px;flex-shrink:0">${docIcon(doc.file_type)}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${doc.name}</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;display:flex;gap:10px;flex-wrap:wrap">
+            <span style="background:${col}18;color:${col};border-radius:4px;padding:1px 7px;font-weight:600">${doc.category || 'Other'}</span>
+            ${date ? `<span>${date}</span>` : ''}
+            ${doc.file_size ? `<span>${fmtSize(doc.file_size)}</span>` : ''}
+            ${doc.uploaded_by_email ? `<span>by ${doc.uploaded_by_email}</span>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          ${doc.download_url ? `<a href="${doc.download_url}" download="${doc.name}" target="_blank" class="btn subtle sm" style="text-decoration:none">⬇ Download</a>` : ''}
+          <button class="btn danger sm" onclick="deleteDocument(${doc.id})">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div class="empty" style="padding:24px">Error: ' + e.message + '</div>';
+  }
+}
+
+function docSetCategory(cat) {
+  docActiveCategory = cat;
+  renderDocuments();
+}
 
 /* ============ Cover / Portfolio Map ============ */
 let coverMap = null;

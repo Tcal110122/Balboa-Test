@@ -831,7 +831,9 @@
 /* ============ Config ============ */
 // Charge codes that are fees/ancillary, NOT base rent
 const FEE_CODES = new Set(['internet','trashrb','liabins','carport','utilreim','garage',
-  'trash-pu','petrent','pestrb','empdisc','patrol','pestctrl']);
+  'trash-pu','petrent','pestrb','empdisc','patrol','pestctrl',
+  'garagmsc','vtrash','amenity','pest','resins','rubs','pkg','storage',
+  'concession','conc','leaseup','specl','disc']);
 const TIERS = ['Small (<=610 SF)','1 Bedroom','2 Bedroom','Large 2BR / 3BR','Unknown'];
 function tierOf(sf){
   if(sf==null||isNaN(sf)) return 'Unknown';
@@ -23930,15 +23932,21 @@ function parseRentRoll(rows){
   // Auto-detect rent code: most common non-fee positive charge in col G/H.
   // Handles Yardi ('rent') and any other PM system that uses a different label.
   const KNOWN_RENT=new Set(['rent','base rent','lease rent','contract rent','unit rent']);
-  const codeCounts={};
+  const codeAmounts={};
   rows.forEach(row=>{
     const code=row[6]==null?'':String(row[6]).trim().toLowerCase();
     const amt=num(row[7]);
-    if(code&&code!=='total'&&!FEE_CODES.has(code)&&amt!=null&&amt>0)
-      codeCounts[code]=(codeCounts[code]||0)+1;
+    if(code&&code!=='total'&&!FEE_CODES.has(code)&&amt!=null&&amt>0){
+      if(!codeAmounts[code]) codeAmounts[code]=[];
+      codeAmounts[code].push(amt);
+    }
   });
-  const topUnknown=Object.entries(codeCounts).filter(([c])=>!KNOWN_RENT.has(c)).sort((a,b)=>b[1]-a[1])[0];
-  if(topUnknown&&topUnknown[1]>=3) KNOWN_RENT.add(topUnknown[0]);
+  const knownRentFound=Object.keys(codeAmounts).some(c=>KNOWN_RENT.has(c));
+  if(!knownRentFound){
+    const median=arr=>{const s=[...arr].sort((a,b)=>a-b);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+    const topUnknown=Object.entries(codeAmounts).filter(([c,amts])=>!KNOWN_RENT.has(c)&&!FEE_CODES.has(c)&&amts.length>=3&&median(amts)>=500).sort((a,b)=>median(b[1])-median(a[1]))[0];
+    if(topUnknown) KNOWN_RENT.add(topUnknown[0]);
+  }
 
   const units=[]; let cur=null;
   for(let i=0;i<rows.length;i++){
@@ -23961,6 +23969,12 @@ function parseRentRoll(rows){
         rowIndex: i
       };
       units.push(cur);
+      // Some Yardi exports put the first charge on the unit header row — process it too
+      const hcode=G==null?'':String(G).trim().toLowerCase();
+      const hamt=num(H);
+      if(hcode==='total'&&hamt!=null) cur.total=hamt;
+      else if(KNOWN_RENT.has(hcode)&&hamt!=null) cur.rentlines.push(hamt);
+      else if(FEE_CODES.has(hcode)&&hamt!=null) cur.fees+=hamt;
     } else if(cur){
       const code=G==null?'':String(G).trim().toLowerCase();
       const amt=num(H);

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { parseRentRoll } from '@/lib/rentroll-parser'
 import { parseOneSiteRR } from '@/lib/onesite-rr-parser'
 import { parseEntrataRR } from '@/lib/entrata-rr-parser'
+import { parseYardiDetailRR } from '@/lib/yardidetail-rr-parser'
 import * as XLSX from 'xlsx'
 import supabase from '@/lib/supabase'
 import { requireAuth, canAccessDeal } from '@/lib/auth'
@@ -19,6 +20,12 @@ function detectFormat(buffer) {
       if (/entrata/i.test(s)) return 'entrata'
     }
   }
+
+  // Yardi Detail RRD format: header row has "Unit" in col 0, "SQFT" in col 7, "Trans Code" in col 23
+  const hdr = grid[0] || []
+  if (/^unit$/i.test(String(hdr[0] || '')) &&
+      /^sqft$/i.test(String(hdr[7] || '')) &&
+      /trans\s*code/i.test(String(hdr[23] || ''))) return 'yardidetail'
 
   // Entrata column-pattern: a row with "Bldg-Unit"/"Unit" in col A and "SQFT" in col B
   for (let i = 0; i < Math.min(10, grid.length); i++) {
@@ -45,8 +52,9 @@ export async function POST(request) {
 
     const buffer = Buffer.from(await file.arrayBuffer())
     const format = detectFormat(buffer)
-    const parsed = format === 'onesite' ? parseOneSiteRR(buffer)
-                 : format === 'entrata' ? parseEntrataRR(buffer)
+    const parsed = format === 'onesite'      ? parseOneSiteRR(buffer)
+                 : format === 'entrata'      ? parseEntrataRR(buffer)
+                 : format === 'yardidetail'  ? parseYardiDetailRR(buffer)
                  : parseRentRoll(buffer)
 
     if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })

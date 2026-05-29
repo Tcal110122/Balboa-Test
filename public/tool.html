@@ -24043,6 +24043,53 @@ function parseRentRoll(rows){
     reviewCount: clean.filter(u=>u.inplaceReview).length};
 }
 
+/* ============ Yardi Detail RRD Parser (One at the Peninsula format) ============ */
+function parseYardiDetailRR(rows){
+  // Col indices: 0=Unit, 1=FP, 7=SQFT, 8=Status, 11=Name, 14=MoveIn, 18=LeaseEnd, 20=Market, 23=TransCode, 35=TotalBilling
+  const extractRent=txt=>{const m=String(txt||'').trim().match(/^RENT\s+([\d,]+\.?\d*)/i);return m?parseFloat(m[1].replace(/,/g,'')):null;};
+  const raw=[]; let cur=null, inApplicant=false;
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i]||[];
+    const unitId=row[0];
+    const isUnitRow=unitId&&typeof unitId==='string'&&/^\d+-\d+/.test(String(unitId));
+    const statusCell=String(row[8]||'').trim();
+    const isApplicantBlock=!isUnitRow&&/^applicant$/i.test(statusCell);
+    if(isUnitRow){
+      inApplicant=false;
+      cur={unit:String(unitId).trim(),utype:String(row[1]||'').trim(),sqft:num(row[7]),
+        status:statusCell,name:String(row[11]||'').trim(),
+        moveIn:toISODate(row[14]),leaseEnd:toISODate(row[18]),
+        market:num(row[20]),rent:extractRent(row[23]),
+        totalBilling:num(row[35]),hasApplicant:false};
+      raw.push(cur);
+    } else if(isApplicantBlock){
+      inApplicant=true; if(cur) cur.hasApplicant=true;
+    } else if(cur&&!inApplicant){
+      const r=extractRent(row[23]); if(r!=null&&cur.rent==null) cur.rent=r;
+    }
+  }
+  const byUnit={};
+  raw.forEach(u=>{if(!byUnit[u.unit])byUnit[u.unit]=u;});
+  let preleasedVacant=0,reviewCount=0;
+  const units=Object.values(byUnit).map(u=>{
+    const isVacant=/^vacant/i.test(u.status)||!u.name||u.name==='';
+    const isPreLeased=isVacant&&u.hasApplicant;
+    if(isPreLeased) preleasedVacant++;
+    let inplace=null,inplaceReview=false;
+    if(!isVacant){
+      if(u.rent!=null&&u.rent>0){inplace=u.rent;}
+      else if(u.totalBilling!=null){inplace=u.totalBilling;inplaceReview=true;}
+      else{inplaceReview=true;}
+      if(inplace!=null&&u.market!=null&&(inplace<0.4*u.market||inplace>1.4*u.market)) inplaceReview=true;
+      if(inplaceReview) reviewCount++;
+    }
+    return{unit:u.unit,utype:u.utype,sqft:u.sqft,tier:tierOf(u.sqft),
+      vacant:isVacant,preLeased:isPreLeased,market:u.market,inplace,inplaceReview,fees:0,
+      leaseExp:u.leaseEnd,moveIn:u.moveIn,name:isVacant?'VACANT':u.name,residentId:''};
+  });
+  return{asOf:'',units,skipped:0,dupCount:0,preleasedVacant,reviewCount};
+}
+
 /* ============ OneSite Rent Roll Parser (Flaherty & Collins) ============ */
 function parseOneSiteRR(rows){
   let asOf='';
@@ -24166,12 +24213,17 @@ function handleFile(file){
           if(/entrata/i.test(s)){fmt='entrata';break;}
         }
       if(fmt==='yardi'){
+        // Yardi Detail RRD: "Unit" in col 0, "SQFT" in col 7, "Trans Code" in col 23
+        const hdr=rows[0]||[];
+        if(/^unit$/i.test(String(hdr[0]||''))&&/^sqft$/i.test(String(hdr[7]||''))&&/trans\s*code/i.test(String(hdr[23]||''))) fmt='yardidetail';
+      }
+      if(fmt==='yardi'){
         for(let i=0;i<Math.min(10,rows.length);i++){
           const row=rows[i]||[];
           if(/bldg.?unit|^unit$/i.test(String(row[0]||''))&&/^sqft$|^sq\.?\s*ft/i.test(String(row[1]||''))){fmt='entrata';break;}
         }
       }
-      const parsed=fmt==='onesite'?parseOneSiteRR(rows):fmt==='entrata'?parseEntrataRR(rows):parseRentRoll(rows);
+      const parsed=fmt==='onesite'?parseOneSiteRR(rows):fmt==='entrata'?parseEntrataRR(rows):fmt==='yardidetail'?parseYardiDetailRR(rows):parseRentRoll(rows);
       if(!parsed.units.length){
         showParseReport('<div class="hint warn"><b>No units found.</b> Make sure this is a Yardi, OneSite, or Entrata rent roll export.</div>');
         return;

@@ -77,29 +77,44 @@ function buildSystemPrompt(dealName, dealType, rr, t12, budget, compData) {
   if (budget) {
     lines.push('\n## BUDGET')
     const b = budget.data || budget
-    const addBudLine = (fig, label) => {
-      if (!fig) return
-      lines.push(`${label}: budgeted ${money(fig.total)}`)
-      if (fig.vals?.length && (b.months || []).length) {
-        const mo = (b.months || []).map((m, i) => `${m.label || m}: ${money(fig.vals[i])}`).join(' | ')
-        lines.push(`  Monthly budget: ${mo}`)
-      }
-    }
-    addBudLine(b.totalIncome || b.revenue, 'Total Income')
-    addBudLine(b.totalOpEx  || b.expenses, 'Total Operating Expenses')
-    addBudLine(b.noi,                      'NOI')
+    const MON_ORDER = b.monthOrder || ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+    const MON_LABEL = { jan:'Jan',feb:'Feb',mar:'Mar',apr:'Apr',may:'May',jun:'Jun',jul:'Jul',aug:'Aug',sep:'Sep',oct:'Oct',nov:'Nov',dec:'Dec' }
 
-    if (t12) {
-      const t = t12.data || t12
-      if (t.noi?.total != null && b.noi?.total != null) {
-        const v = t.noi.total - b.noi.total
-        lines.push(`NOI vs budget: ${v >= 0 ? '+' : ''}${money(v)} (${pct(b.noi.total ? v / b.noi.total * 100 : null)})`)
-      }
-      if (t.totalIncome?.total != null && (b.totalIncome || b.revenue)?.total != null) {
-        const bInc = (b.totalIncome || b.revenue).total
-        const v = t.totalIncome.total - bInc
-        lines.push(`Income vs budget: ${v >= 0 ? '+' : ''}${money(v)} (${pct(bInc ? v / bInc * 100 : null)})`)
-      }
+    // Budget data lives in b.scorecard.{income|opex|noi}.budget as { jan: N, feb: N, ... }
+    const sc = b.scorecard || {}
+    const sumMonths = obj => obj ? MON_ORDER.reduce((s, m) => s + (obj[m] ?? 0), 0) : null
+    const fmtMonths = obj => obj ? MON_ORDER.filter(m => obj[m] != null).map(m => `${MON_LABEL[m]}: ${money(obj[m])}`).join(' | ') : null
+
+    const budNOI    = sc.noi?.budget
+    const budIncome = sc.income?.budget
+    const budOpEx   = sc.opex?.budget
+
+    const budNOITotal    = sumMonths(budNOI)
+    const budIncomeTotal = sumMonths(budIncome)
+    const budOpExTotal   = sumMonths(budOpEx)
+
+    if (budIncomeTotal != null) {
+      lines.push(`Total Income: budgeted ${money(budIncomeTotal)} (full year)`)
+      const mo = fmtMonths(budIncome); if (mo) lines.push(`  Monthly: ${mo}`)
+    }
+    if (budOpExTotal != null) {
+      lines.push(`Total OpEx: budgeted ${money(budOpExTotal)} (full year)`)
+    }
+    if (budNOITotal != null) {
+      lines.push(`NOI: budgeted ${money(budNOITotal)} (full year)`)
+      const mo = fmtMonths(budNOI); if (mo) lines.push(`  Monthly: ${mo}`)
+    }
+    if (b.currentMonth) lines.push(`Latest closed month: ${MON_LABEL[b.currentMonth] || b.currentMonth}`)
+
+    // Actuals vs budget for closed months
+    const actNOI = sc.noi?.actual
+    const closedActNOI = actNOI ? MON_ORDER.filter(m => actNOI[m] != null && actNOI[m] !== 0) : []
+    if (closedActNOI.length) {
+      const actTotal = closedActNOI.reduce((s, m) => s + actNOI[m], 0)
+      const budYTD   = closedActNOI.reduce((s, m) => s + (budNOI?.[m] ?? 0), 0)
+      const variance = actTotal - budYTD
+      lines.push(`NOI YTD actual: ${money(actTotal)} vs budget ${money(budYTD)} → ${variance >= 0 ? '+' : ''}${money(variance)} (${pct(budYTD ? variance / budYTD * 100 : null)})`)
+      lines.push(`  Actuals by month: ${closedActNOI.map(m => `${MON_LABEL[m]}: ${money(actNOI[m])}`).join(' | ')}`)
     }
   }
 

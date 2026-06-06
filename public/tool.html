@@ -576,8 +576,9 @@
       <div style="display:flex;gap:4px;background:#f1f5f9;border-radius:8px;padding:3px">
         <button id="pcAnn" onclick="switchPCPeriod('annual')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:#1e293b;color:#fff">Annual</button>
         <button id="pcMo" onclick="switchPCPeriod('monthly')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:#64748b">Monthly</button>
+        <button id="pcT3" onclick="switchPCPeriod('trailing3')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:#64748b">T-3 Ann.</button>
       </div>
-      <span class="muted" style="font-size:12px">T-12 actuals · per unit</span>
+      <span class="muted" id="pcSubtitle" style="font-size:12px">T-12 actuals · per unit</span>
     </div>
     <div id="portcompContent" style="overflow-x:auto"></div>
   </div>
@@ -28332,7 +28333,11 @@ function switchPCPeriod(p){
   document.getElementById('pcAnn').style.background=p==='annual'?'#1e293b':'transparent';
   document.getElementById('pcAnn').style.color=p==='annual'?'#fff':'#64748b';
   document.getElementById('pcMo').style.background=p==='monthly'?'#1e293b':'transparent';
+  document.getElementById('pcT3').style.background=p==='trailing3'?'#1e293b':'transparent';
+  document.getElementById('pcT3').style.color=p==='trailing3'?'#fff':'#64748b';
   document.getElementById('pcMo').style.color=p==='monthly'?'#fff':'#64748b';
+  const sub=document.getElementById('pcSubtitle');
+  if(sub) sub.textContent=p==='trailing3'?'Last 3 months annualized (×4) · per unit':p==='monthly'?'T-12 actuals · per unit / month':'T-12 actuals · per unit';
   renderPortfolioComparison();
 }
 
@@ -28389,24 +28394,34 @@ async function renderPortfolioComparison(){
   function extractValues(deal){
     const t=deal.t12||{};
     const units=deal.unitCount||1;
-    // Annualize partial-year data (e.g. One at Penn = 4 months → ×3)
+    const isT3=_pcPeriod==='trailing3';
+
+    // getScalar: for T-3 mode, sum last 3 monthly vals and annualise (×4).
+    // For other modes use the stored total.
+    const getScalar=fig=>{
+      if(!fig) return null;
+      if(!isT3) return fig.total??null;
+      const vals=(fig.vals||[]).filter(v=>v!=null);
+      const last3=vals.slice(-3);
+      return last3.length?last3.reduce((s,v)=>s+v,0)*4:null;
+    };
+
     const puA=(val)=>val==null||!units?null:val/units/div;
 
     const catMap={};
     (t.categories||[]).forEach(c=>{
-      catMap[c.acct]=c.total;
-      catMap[c.name]=c.total;
-      catMap[c.label]=c.total;
+      const v=getScalar(c);
+      catMap[c.acct]=v; catMap[c.name]=v; catMap[c.label]=v;
     });
 
     // Income lines — search by label regex across incomeLines array
     const incLines=t.incomeLines||[];
-    const findInc=re=>{ const l=incLines.find(x=>re.test(x.label||x.acct||'')); return l?l.total:null; };
+    const findInc=re=>{ const l=incLines.find(x=>re.test(x.label||x.acct||'')); return l?getScalar(l):null; };
 
-    let potRent  = t.potentialRent?.total ?? findInc(/potential|scheduled rent|gross potential/i);
+    let potRent  = getScalar(t.potentialRent) ?? findInc(/potential|scheduled rent|gross potential/i);
     let otherRent= findInc(/other rental/i);
     let otherInc = findInc(/other income/i);
-    const totalInc = t.totalIncome?.total;
+    const totalInc = getScalar(t.totalIncome);
 
     if(potRent==null && totalInc!=null){
       const knownOther=(otherRent||0)+(otherInc||0);
@@ -28414,11 +28429,11 @@ async function renderPortfolioComparison(){
     }
 
     // Derive OpEx from category sum if not directly parsed
-    const catSum=(t.categories||[]).reduce((s,c)=>s+(c.total||0),0);
-    const opexTotal=t.totalOpEx?.total??(catSum>0?catSum:null);
+    const catSum=(t.categories||[]).reduce((s,c)=>s+(getScalar(c)||0),0);
+    const opexTotal=getScalar(t.totalOpEx)??(catSum>0?catSum:null);
 
     // Derive NOI when not parsed
-    const noiTotal=t.noi?.total??(totalInc!=null&&opexTotal!=null?totalInc-opexTotal:null);
+    const noiTotal=getScalar(t.noi)??(totalInc!=null&&opexTotal!=null?totalInc-opexTotal:null);
 
     return{
       potRent:  puA(potRent),
@@ -28464,7 +28479,7 @@ async function renderPortfolioComparison(){
     return good?`rgba(22,163,74,${alpha})`:`rgba(220,38,38,${alpha})`;
   }
 
-  const periodLabel=_pcPeriod==='monthly'?'/unit/mo':'/unit/yr';
+  const periodLabel=_pcPeriod==='monthly'?'/unit/mo':_pcPeriod==='trailing3'?'/unit/yr (T-3 ann.)':'/unit/yr';
 
   let html=`<table style="border-collapse:collapse;font-size:12.5px;width:100%;min-width:600px">
   <thead>

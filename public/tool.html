@@ -25963,16 +25963,19 @@ function renderIncome(){
   content.style.display='block';
   exportRow.style.display=DEAL_ID?'block':'none';
 
-  const avgMo=v=>v==null?null:v/12;
+  const nMos = t.months?.length || 12;
+  const isPartial = nMos < 12;
+  const periodLabel = isPartial ? `${nMos}-month YTD` : 'T-12';
+  const avgMo=v=>v==null?null:v/nMos;
   const inc=t.totalIncome, opex=t.totalOpEx, noi=t.noi, noiAR=t.noiAfterRepl;
   const opexPctEGI=(inc&&inc.total&&opex)?opex.total/inc.total*100:null;
   const noiMargin=(inc&&inc.total&&noi)?noi.total/inc.total*100:null;
 
-  // KPI tiles — T-12 headline
+  // KPI tiles — headline
   const kpis=[
-    {k:'Total Income (T-12)',v:money(inc&&inc.total),x:'trailing 12 mo · '+money(avgMo(inc&&inc.total))+'/mo avg'},
-    {k:'Operating Expenses (T-12)',v:money(opex&&opex.total),x:opexPctEGI!=null?opexPctEGI.toFixed(1)+'% of income':''},
-    {k:'NOI (T-12)',v:money(noi&&noi.total),x:noiMargin!=null?noiMargin.toFixed(1)+'% margin':''},
+    {k:`Total Income (${periodLabel})`,v:money(inc&&inc.total),x:`${nMos} months · `+money(avgMo(inc&&inc.total))+'/mo avg'},
+    {k:`Operating Expenses (${periodLabel})`,v:money(opex&&opex.total),x:opexPctEGI!=null?opexPctEGI.toFixed(1)+'% of income':''},
+    {k:`NOI (${periodLabel})`,v:money(noi&&noi.total),x:noiMargin!=null?noiMargin.toFixed(1)+'% margin':''},
     {k:'NOI After Replacements',v:money(noiAR&&noiAR.total),x:'after routine + capital'}
   ];
   let html=`<div class="hint"><b>Income statement loaded.</b> T-12 period <b>${t.period||'—'}</b>.
@@ -26245,18 +26248,18 @@ function renderIncome(){
   // % of income basis matches the selected scope
   const incBasis = single ? (inc&&inc.vals[mi]) : (inc&&inc.total);
 
-  const monthOpts=`<option value="-1"${mi<0?' selected':''}>All 12 months (trailing total)</option>`
+  const monthOpts=`<option value="-1"${mi<0?' selected':''}>All ${nMos} months (${isPartial?'YTD total':'trailing total'})</option>`
     + monLabels.map((lb,i)=>`<option value="${i}"${mi===i?' selected':''}>${lb}</option>`).join('');
 
-  html+=`<div class="card"><div class="card-hd"><h2>T-12 Operations Summary</h2>
+  html+=`<div class="card"><div class="card-hd"><h2>${periodLabel} Operations Summary</h2>
     <label class="fld" style="flex-direction:row;align-items:center;gap:6px">
       <span style="text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink-faint)">Month</span>
       <select id="t12MonthSel" style="font-size:12px;padding:4px 7px">${monthOpts}</select>
     </label></div>
     <div class="card-bd"><table><thead><tr>
       <th class="l">Line</th><th>${colLabel}</th>`
-      +(single?'':'<th>Monthly Avg</th>')
-      +`<th>% of Income</th><th class="l">${single?'12-Mo Trend':'Trend'}</th></tr></thead><tbody>`;
+      +(single?'':`<th>Monthly Avg (÷${nMos})</th>`)
+      +`<th>% of Income</th><th class="l">${single?`${nMos}-Mo Trend`:'Trend'}</th></tr></thead><tbody>`;
   const sumRow=(label,f,opts)=>{
     if(!f) return '';
     const o=opts||{};
@@ -26282,7 +26285,7 @@ function renderIncome(){
   html+=`</div></div>`;
 
   // ===== T-12 expense detail (expandable, honors month picker) =====
-  html+=`<div class="card"><div class="card-hd"><h2>T-12 Operating Expense Detail</h2>
+  html+=`<div class="card"><div class="card-hd"><h2>${periodLabel} Operating Expense Detail</h2>
     <span class="note">${single?colLabel+' — by category':'By category — click for line items'}</span></div>
     <div class="card-bd"><table><thead><tr>
       <th class="l">Category</th><th>${colLabel}</th>`

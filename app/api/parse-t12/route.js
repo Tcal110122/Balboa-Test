@@ -13,7 +13,8 @@ function detectT12Format(buffer) {
     const row0 = grid[0] || []
     const row1 = grid[1] || []
     // Comparison format: row 0 has Date objects, row 1 has Actual/Budget strings
-    const hasDates = row0.some(v => v instanceof Date)
+    const isDateLike = v => v instanceof Date || (typeof v === 'number' && v > 40000 && v < 80000)
+    const hasDates = row0.some(isDateLike)
     const hasActualBudget = row1.some(v => typeof v === 'string' && /^(actual|budget)$/i.test(String(v).trim()))
     if (hasDates && hasActualBudget) return 'comparison'
   } catch (_) {}

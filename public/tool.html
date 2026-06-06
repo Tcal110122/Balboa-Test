@@ -28453,7 +28453,14 @@ async function renderPortfolioComparison(){
     };
   }
 
+  const isT3=_pcPeriod==='trailing3';
   const extracted=deals.map(d=>({deal:d, vals:extractValues(d)}));
+
+  // For T-3 mode: also extract T-12 annual values so we can compare T-3 vs T-12 per property
+  const t12Base=isT3?deals.map(d=>{
+    const saved=_pcPeriod; _pcPeriod='annual';
+    const v=extractValues(d); _pcPeriod=saved; return v;
+  }):null;
 
   // Deals excluded from heat map avg (lease-up distorts comparison)
   const heatExclude=d=>/irvington|11th.*(spruce|and spruce)|spruce.*11th/i.test(d.name);
@@ -28469,13 +28476,23 @@ async function renderPortfolioComparison(){
     return units?sum/units:null;
   }
 
-  // Heat map: returns background color
+  // Heat map vs portfolio avg (T-12 / Annual / Monthly modes)
   function heatBg(val, avg, favorLow){
     if(val==null||avg==null||avg===0) return '';
     const pct=(val-avg)/Math.abs(avg);
     const good=favorLow?pct<0:pct>0;
     const intensity=Math.min(Math.abs(pct)*2,1);
     const alpha=(0.06+intensity*0.16).toFixed(2);
+    return good?`rgba(22,163,74,${alpha})`:`rgba(220,38,38,${alpha})`;
+  }
+
+  // Heat map for T-3 mode: compare T-3 vs property's own T-12 (improving vs deteriorating)
+  function heatBgT3(t3val, t12val, favorLow){
+    if(t3val==null||t12val==null||t12val===0) return '';
+    const pct=(t3val-t12val)/Math.abs(t12val);
+    const good=favorLow?pct<0:pct>0;
+    const intensity=Math.min(Math.abs(pct)*3,1); // ×3 so small moves show color
+    const alpha=(0.08+intensity*0.18).toFixed(2);
     return good?`rgba(22,163,74,${alpha})`:`rgba(220,38,38,${alpha})`;
   }
 
@@ -28498,9 +28515,12 @@ async function renderPortfolioComparison(){
       const rowStyle=m.bold?'font-weight:700;background:#f8fafc':'';
       html+=`<tr style="border-bottom:1px solid #f1f5f9">
         <td style="padding:8px 14px;color:#374151;position:sticky;left:0;background:${m.bold?'#f8fafc':'#fff'};z-index:1;${rowStyle}">${m.label}</td>`;
-      extracted.forEach(({deal,vals})=>{
+      extracted.forEach(({deal,vals},di)=>{
         const v=vals[m.key];
-        const bg=m.bold||heatExclude(deal)?'':heatBg(v,avg,m.favorLow);
+        let bg='';
+        if(!m.bold&&!heatExclude(deal)){
+          bg=isT3&&t12Base?heatBgT3(v,t12Base[di][m.key],m.favorLow):heatBg(v,avg,m.favorLow);
+        }
         html+=`<td style="text-align:right;padding:8px 14px;${bg?'background:'+bg+';':''};${rowStyle}">${fmt(v)}</td>`;
       });
       html+=`<td style="text-align:right;padding:8px 14px;background:#f1f5f9;border-left:2px solid #e2e8f0;${rowStyle}">${fmt(avg)}</td></tr>`;
@@ -28514,18 +28534,21 @@ async function renderPortfolioComparison(){
   const noiAvg=portAvg('noi');
   html+=`<tr style="border-top:2px solid #e2e8f0;background:#f0fdf4">
     <td style="padding:10px 14px;font-weight:700;color:#166534;position:sticky;left:0;background:#f0fdf4;z-index:1">NOI</td>`;
-  extracted.forEach(({deal,vals})=>{
+  extracted.forEach(({deal,vals},di)=>{
     const v=vals['noi'];
-    const bg=heatExclude(deal)?'':heatBg(v,noiAvg,false);
+    let bg='';
+    if(!heatExclude(deal)){
+      bg=isT3&&t12Base?heatBgT3(v,t12Base[di]['noi'],false):heatBg(v,noiAvg,false);
+    }
     html+=`<td style="text-align:right;padding:10px 14px;font-weight:700;color:#166534;${bg?'background:'+bg+';':''}">${fmt(v)}</td>`;
   });
   html+=`<td style="text-align:right;padding:10px 14px;font-weight:700;color:#166534;background:#f0fdf4;border-left:2px solid #e2e8f0">${fmt(noiAvg)}</td></tr>`;
 
   html+=`</tbody></table>`;
-  html+=`<div style="margin-top:10px;font-size:11px;color:#9ca3af;padding:0 2px">
-    Heat map: <span style="background:rgba(22,163,74,0.15);padding:1px 6px;border-radius:3px">green = favorable vs portfolio avg</span> &nbsp;
-    <span style="background:rgba(220,38,38,0.15);padding:1px 6px;border-radius:3px">red = unfavorable vs portfolio avg</span>
-  </div>`;
+  const legendText=isT3
+    ?`Heat map (property-specific vs own T-12): <span style="background:rgba(22,163,74,0.15);padding:1px 6px;border-radius:3px">green = improving</span> &nbsp;<span style="background:rgba(220,38,38,0.15);padding:1px 6px;border-radius:3px">red = deteriorating</span>`
+    :`Heat map: <span style="background:rgba(22,163,74,0.15);padding:1px 6px;border-radius:3px">green = favorable vs portfolio avg</span> &nbsp;<span style="background:rgba(220,38,38,0.15);padding:1px 6px;border-radius:3px">red = unfavorable vs portfolio avg</span>`;
+  html+=`<div style="margin-top:10px;font-size:11px;color:#9ca3af;padding:0 2px">${legendText}</div>`;
 
   el.innerHTML=html;
 }

@@ -24533,10 +24533,10 @@ function parseT12(wb){
   // income detail: rows between 'Total Income' header area — capture key income lines
   // grab the major income subtotals
   const incomeLines=[
-    fig('41029-099','Potential Rent'),
-    fig('41999-098','Total Other Rental Inc.'),
-    fig('43599-099','Total Other Income'),
-    fig('42099-099','Total Corporate Housing')
+    fig('41029-099','Potential Rent',          /^(potential (gross )?rent|scheduled rent|gross potential)\s*$/i),
+    fig('41999-098','Total Other Rental Inc.', /^(total )?other rental (income|inc\.?)\s*$/i),
+    fig('43599-099','Total Other Income',      /^(total )?other income\s*$/i),
+    fig('42099-099','Total Corporate Housing', /^(total )?corporate housing\s*$/i),
   ].filter(Boolean);
 
   let period='';
@@ -28183,15 +28183,28 @@ async function renderPortfolioComparison(){
     const catMap={};
     (t.categories||[]).forEach(c=>{ catMap[c.acct||c.label]=c.total; });
 
-    // Income lines
+    // Income lines — search by label regex across incomeLines array
     const incLines=t.incomeLines||[];
     const findInc=re=>{ const l=incLines.find(x=>re.test(x.label||x.acct||'')); return l?l.total:null; };
 
+    // Primary lookups
+    let potRent  = t.potentialRent?.total ?? findInc(/potential|scheduled rent|gross potential/i);
+    let otherRent= findInc(/other rental/i);
+    let otherInc = findInc(/other income/i);
+    const totalInc = t.totalIncome?.total;
+
+    // Fallback: if individual lines missing but total income exists, try to
+    // compute potential rent as totalIncome − otherRent − otherInc
+    if(potRent==null && totalInc!=null){
+      const knownOther=(otherRent||0)+(otherInc||0);
+      if(knownOther>0) potRent=totalInc-knownOther;
+    }
+
     return{
-      potRent:  pu(t.potentialRent?.total ?? findInc(/potential/i), units),
-      otherRent:pu(findInc(/other rental/i), units),
-      otherInc: pu(findInc(/other income/i), units),
-      totalInc: pu(t.totalIncome?.total, units),
+      potRent:  pu(potRent, units),
+      otherRent:pu(otherRent, units),
+      otherInc: pu(otherInc, units),
+      totalInc: pu(totalInc, units),
       totalOpEx:pu(t.totalOpEx?.total, units),
       noi:      pu(t.noi?.total, units),
       '51599-099': pu(catMap['51599-099']??catMap['Payroll & Benefits'], units),

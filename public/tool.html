@@ -26048,8 +26048,9 @@ function renderIncome(){
     }
     const t12MonthsCovered=Object.keys(t12MonIdx);
     // resolve a headline line's actual for a given month — strictly from the T-12.
-    const t12HeadFor={income:t&&t.totalIncome, opex:t&&t.totalOpEx,
-                      noi:t&&t.noi, noiAR:t&&t.noiAfterRepl};
+    // Use derived opex/noi if the parser didn't find them directly
+    const t12HeadFor={income:t&&t.totalIncome, opex:opex,
+                      noi:noi, noiAR:t&&t.noiAfterRepl};
     // actual for a headline line in a month — strictly from the T-12.
     // If the T-12 doesn't cover the month, there is no actual (returns null).
     const mergedActual=(metricKey, mon, scData)=>{

@@ -577,7 +577,7 @@
         <button id="pcAnn" onclick="switchPCPeriod('annual')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:#1e293b;color:#fff">Annual</button>
         <button id="pcMo" onclick="switchPCPeriod('monthly')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:#64748b">Monthly</button>
       </div>
-      <span class="muted" style="font-size:12px">Actuals per unit · annualized where &lt;12 months of data</span>
+      <span class="muted" style="font-size:12px">T-12 actuals · per unit</span>
     </div>
     <div id="portcompContent" style="overflow-x:auto"></div>
   </div>
@@ -28302,9 +28302,7 @@ async function renderPortfolioComparison(){
     const t=deal.t12||{};
     const units=deal.unitCount||1;
     // Annualize partial-year data (e.g. One at Penn = 4 months → ×3)
-    const nMos=t.months?.length||12;
-    const ann=nMos<12?12/nMos:1;
-    const puA=(val)=>val==null||!units?null:val*ann/units/div;
+    const puA=(val)=>val==null||!units?null:val/units/div;
 
     const catMap={};
     (t.categories||[]).forEach(c=>{
@@ -28374,16 +28372,14 @@ async function renderPortfolioComparison(){
     return good?`rgba(22,163,74,${alpha})`:`rgba(220,38,38,${alpha})`;
   }
 
-  const periodLabel=_pcPeriod==='monthly'?'/unit/mo':'/unit/yr (annualized)';
+  const periodLabel=_pcPeriod==='monthly'?'/unit/mo':'/unit/yr';
 
   let html=`<table style="border-collapse:collapse;font-size:12.5px;width:100%;min-width:600px">
   <thead>
     <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
       <th style="text-align:left;padding:10px 14px;font-weight:700;color:#374151;position:sticky;left:0;background:#f8fafc;min-width:190px;z-index:1">Metric (${periodLabel})</th>`;
   deals.forEach(d=>{
-    const dMos=d.t12?.months?.length||12;
-    const moNote=dMos<12?`<br><span style="font-weight:400;color:#f59e0b;font-size:10px">${dMos}-mo annualized</span>`:'';
-    html+=`<th style="text-align:right;padding:10px 14px;font-weight:700;color:#374151;white-space:nowrap">${d.name}<br><span style="font-weight:400;color:#9ca3af;font-size:11px">${(d.unitCount||'?')} units</span>${moNote}</th>`;
+    html+=`<th style="text-align:right;padding:10px 14px;font-weight:700;color:#374151;white-space:nowrap">${d.name}<br><span style="font-weight:400;color:#9ca3af;font-size:11px">${(d.unitCount||'?')} units</span></th>`;
   });
   html+=`<th style="text-align:right;padding:10px 14px;font-weight:700;color:#374151;background:#f1f5f9;border-left:2px solid #e2e8f0">Portfolio Avg</th></tr></thead><tbody>`;
 

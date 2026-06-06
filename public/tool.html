@@ -24532,13 +24532,29 @@ function parseT12(wb){
     ['71499-099','Routine Replacement', /^routine repl/i],
     ['71899-099','Capital / Renovation',/^(capital|renovation)/i]
   ].map(([acct,name,re])=>{ const f=fig(acct,name,re); return f?{...f,name}:null; }).filter(Boolean);
-  // fallback: noi + interest add-back (acct 6801-0000) for properties without a direct NOI-after row
   if(!noiAfterRepl && noi){
-    const interest=fig('6801-0000','Interest Expense');
-    if(interest){
-      const vals=noi.vals.map((v,i)=>v!=null?v+(interest.vals[i]||0):null);
+    // Derive NOI AR from capital/renovation rows (take abs value — can be negative in file)
+    const replRe=[
+      /^total\s+inter[io]+r\s*[&]?\s*exterior\s+renovations?\s*$/i,
+      /^total\s+exterior\s+improvements?\s*$/i,
+      /^total\s+interior\s+improvements?\s*$/i,
+      /^total\s+(routine\s+)?replacements?\s*$/i,
+      /^(total )?capital\s+(replacements?|improvements?)\s*$/i,
+    ];
+    const replParts=replRe.map(re=>{const r=findRow(re);if(r==null)return null;const d=readRow(r);return{vals:d.vals.map(v=>v==null?null:Math.abs(v)),total:Math.abs(d.total||0)};}).filter(Boolean);
+    if(replParts.length>0){
+      const replVals=months.map((_,i)=>replParts.reduce((s,p)=>s+(p.vals[i]||0),0));
+      const replTotal=replParts.reduce((s,p)=>s+p.total,0);
       noiAfterRepl={label:'NOI After Replacements',acct:'computed',row:-1,
-        vals,total:(noi.total||0)+(interest.total||0)};
+        vals:noi.vals.map((v,i)=>v!=null?v-replVals[i]:null),total:noi.total-replTotal};
+    } else {
+      // Legacy fallback: interest add-back (only for formats where that makes sense)
+      const interest=fig('6801-0000','Interest Expense');
+      if(interest){
+        const vals=noi.vals.map((v,i)=>v!=null?v+(interest.vals[i]||0):null);
+        noiAfterRepl={label:'NOI After Replacements',acct:'computed',row:-1,
+          vals,total:(noi.total||0)+(interest.total||0)};
+      }
     }
   }
 

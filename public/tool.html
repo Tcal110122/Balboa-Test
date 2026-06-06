@@ -25300,7 +25300,7 @@ function parseRealPageBudget(wb){
   if(hdrRow<0)return{error:'Could not find month header row in RealPage budget.'};
   const monthOrder=MON3.filter(m=>monCols[m]!=null);
   const readM=ri=>{const row=grid[ri]||[];const o={};monthOrder.forEach(m=>{o[m]=snum(row[monCols[m]]);});return o;};
-  const findRow=re=>{for(let r=hdrRow+1;r<grid.length;r++){if(re.test(String(grid[r]?.[0]||'').trim()))return r;}return-1;};
+  const findRow=re=>{for(let r=hdrRow+1;r<grid.length;r++){if(!re.test(String(grid[r]?.[0]||'').trim()))continue;const row=grid[r]||[];const hasVals=monthOrder.some(m=>row[monCols[m]]!=null&&typeof row[monCols[m]]==='number');if(hasVals)return r;}return-1;};
   const budM=re=>{const r=findRow(re);return r>=0?readM(r):null;};
   const income=budM(/^TOTAL INCOME$/i);
   const opex  =budM(/^TOTAL OPERATING EXPENSE$/i);

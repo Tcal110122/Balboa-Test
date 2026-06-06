@@ -237,6 +237,7 @@
   <button class="tab" data-tab="history">Period History</button>
   <button class="tab" data-tab="documents">Documents</button>
   <button class="tab" data-tab="queries">Queries</button>
+  <button class="tab" data-tab="portcomp">Portfolio Comparison</button>
 </div>
 
 <div class="wrap">
@@ -562,6 +563,23 @@
         Export T-12 to Excel
       </button>
     </div>
+  </div>
+
+  <!-- PORTFOLIO COMPARISON -->
+  <div class="panel" id="panel-portcomp">
+    <div style="padding:20px 0 12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <h2 style="font-size:16px;font-weight:700;margin:0">Portfolio Comparison</h2>
+      <div style="display:flex;gap:4px;background:#f1f5f9;border-radius:8px;padding:3px">
+        <button id="pcMF" onclick="switchPCType('conventional')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:#1e293b;color:#fff">Multifamily</button>
+        <button id="pcST" onclick="switchPCType('student')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:#64748b">Student</button>
+      </div>
+      <div style="display:flex;gap:4px;background:#f1f5f9;border-radius:8px;padding:3px">
+        <button id="pcAnn" onclick="switchPCPeriod('annual')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:#1e293b;color:#fff">Annual</button>
+        <button id="pcMo" onclick="switchPCPeriod('monthly')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;background:transparent;color:#64748b">Monthly</button>
+      </div>
+      <span class="muted" style="font-size:12px">T-12 actuals · per unit</span>
+    </div>
+    <div id="portcompContent" style="overflow-x:auto"></div>
   </div>
 
   <!-- QUERIES -->
@@ -27317,6 +27335,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='documents') renderDocuments();
     if(t.dataset.tab==='preleasing') renderPreleasing();
     if(t.dataset.tab==='queries') renderQueries();
+    if(t.dataset.tab==='portcomp') renderPortfolioComparison();
     if(t.dataset.tab==='cover'){ renderCover(); setTimeout(()=>{ if(coverMap) coverMap.invalidateSize(); },200); }
   });
 });
@@ -28087,6 +28106,176 @@ document.getElementById('resetAll').addEventListener('click',()=>{
     renderAll();updateHdr();
   }
 });
+
+/* ============ Portfolio Comparison ============ */
+let _pcType='conventional', _pcPeriod='annual', _pcData=null, _pcLoading=false;
+
+function switchPCType(t){
+  _pcType=t; _pcData=null;
+  document.getElementById('pcMF').style.background=t==='conventional'?'#1e293b':'transparent';
+  document.getElementById('pcMF').style.color=t==='conventional'?'#fff':'#64748b';
+  document.getElementById('pcST').style.background=t==='student'?'#1e293b':'transparent';
+  document.getElementById('pcST').style.color=t==='student'?'#fff':'#64748b';
+  renderPortfolioComparison();
+}
+function switchPCPeriod(p){
+  _pcPeriod=p;
+  document.getElementById('pcAnn').style.background=p==='annual'?'#1e293b':'transparent';
+  document.getElementById('pcAnn').style.color=p==='annual'?'#fff':'#64748b';
+  document.getElementById('pcMo').style.background=p==='monthly'?'#1e293b':'transparent';
+  document.getElementById('pcMo').style.color=p==='monthly'?'#fff':'#64748b';
+  renderPortfolioComparison();
+}
+
+async function renderPortfolioComparison(){
+  const el=document.getElementById('portcompContent');
+  if(!el) return;
+  if(_pcLoading) return;
+
+  if(!_pcData){
+    _pcLoading=true;
+    el.innerHTML='<div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px">Loading portfolio data…</div>';
+    try{
+      const res=await fetch('/api/portfolio-comparison?type='+_pcType);
+      if(!res.ok) throw new Error(await res.text());
+      _pcData=await res.json();
+    }catch(e){
+      el.innerHTML=`<div style="padding:32px;color:#dc2626;font-size:13px">Error: ${e.message}</div>`;
+      _pcLoading=false; return;
+    }
+    _pcLoading=false;
+  }
+
+  const deals=(_pcData.deals||[]).filter(d=>d.t12);
+  if(!deals.length){
+    el.innerHTML='<div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px">No T-12 data available for this portfolio type.<br>Upload T-12 files from the Income tab for each property.</div>';
+    return;
+  }
+
+  const div=_pcPeriod==='monthly'?12:1;
+  const pu=(val,units)=>val==null||!units?null:val/units/div;
+  const fmt=v=>v==null?'—':'$'+Math.round(v).toLocaleString();
+
+  // Metrics definition: { label, key, section, favorLow }
+  const incomeMetrics=[
+    {label:'Potential Rent',    key:'potRent',   favorLow:false},
+    {label:'Other Rental Inc.', key:'otherRent',  favorLow:false},
+    {label:'Other Income',      key:'otherInc',   favorLow:false},
+    {label:'Total Income',      key:'totalInc',   favorLow:false, bold:true},
+  ];
+  const expenseMetrics=[
+    {label:'Payroll & Benefits',      key:'51599-099', favorLow:true},
+    {label:'General Maintenance',     key:'53999-099', favorLow:true},
+    {label:'Advertising / Marketing', key:'54999-099', favorLow:true},
+    {label:'General & Admin',         key:'58399-099', favorLow:true},
+    {label:'Utilities',               key:'59999-099', favorLow:true},
+    {label:'Management Fees',         key:'61999-099', favorLow:true},
+    {label:'Taxes',                   key:'62999-099', favorLow:true},
+    {label:'Insurance',               key:'63999-099', favorLow:true},
+    {label:'Total OpEx',              key:'totalOpEx',  favorLow:true,  bold:true},
+  ];
+  const noiMetric={label:'NOI', key:'noi', favorLow:false, bold:true};
+
+  // Extract per-unit values for each deal
+  function extractValues(deal){
+    const t=deal.t12||{};
+    const units=deal.unitCount||1;
+    const catMap={};
+    (t.categories||[]).forEach(c=>{ catMap[c.acct||c.label]=c.total; });
+
+    // Income lines
+    const incLines=t.incomeLines||[];
+    const findInc=re=>{ const l=incLines.find(x=>re.test(x.label||x.acct||'')); return l?l.total:null; };
+
+    return{
+      potRent:  pu(t.potentialRent?.total ?? findInc(/potential/i), units),
+      otherRent:pu(findInc(/other rental/i), units),
+      otherInc: pu(findInc(/other income/i), units),
+      totalInc: pu(t.totalIncome?.total, units),
+      totalOpEx:pu(t.totalOpEx?.total, units),
+      noi:      pu(t.noi?.total, units),
+      '51599-099': pu(catMap['51599-099']??catMap['Payroll & Benefits'], units),
+      '53999-099': pu(catMap['53999-099']??catMap['General Maintenance'], units),
+      '54999-099': pu(catMap['54999-099']??catMap['Advertising / Marketing'], units),
+      '58399-099': pu(catMap['58399-099']??catMap['General & Administrative'], units),
+      '59999-099': pu(catMap['59999-099']??catMap['Utilities'], units),
+      '61999-099': pu(catMap['61999-099']??catMap['Management Fees'], units),
+      '62999-099': pu(catMap['62999-099']??catMap['Taxes'], units),
+      '63999-099': pu(catMap['63999-099']??catMap['Insurance'], units),
+    };
+  }
+
+  const extracted=deals.map(d=>({deal:d, vals:extractValues(d)}));
+
+  // Weighted portfolio avg for a key (weight by unit count)
+  function portAvg(key){
+    let sum=0, units=0;
+    extracted.forEach(({deal,vals})=>{
+      const v=vals[key];
+      if(v!=null){ sum+=v*deal.unitCount; units+=deal.unitCount; }
+    });
+    return units?sum/units:null;
+  }
+
+  // Heat map: returns background color
+  function heatBg(val, avg, favorLow){
+    if(val==null||avg==null||avg===0) return '';
+    const pct=(val-avg)/Math.abs(avg);
+    const good=favorLow?pct<0:pct>0;
+    const intensity=Math.min(Math.abs(pct)*2,1);
+    const alpha=(0.06+intensity*0.16).toFixed(2);
+    return good?`rgba(22,163,74,${alpha})`:`rgba(220,38,38,${alpha})`;
+  }
+
+  const periodLabel=_pcPeriod==='monthly'?'/unit/mo':'/unit/yr';
+
+  let html=`<table style="border-collapse:collapse;font-size:12.5px;width:100%;min-width:600px">
+  <thead>
+    <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
+      <th style="text-align:left;padding:10px 14px;font-weight:700;color:#374151;position:sticky;left:0;background:#f8fafc;min-width:190px;z-index:1">Metric (${periodLabel})</th>`;
+  deals.forEach(d=>{
+    html+=`<th style="text-align:right;padding:10px 14px;font-weight:700;color:#374151;white-space:nowrap">${d.name}<br><span style="font-weight:400;color:#9ca3af;font-size:11px">${(d.unitCount||'?')} units</span></th>`;
+  });
+  html+=`<th style="text-align:right;padding:10px 14px;font-weight:700;color:#374151;background:#f1f5f9;border-left:2px solid #e2e8f0">Portfolio Avg</th></tr></thead><tbody>`;
+
+  function renderSection(metrics, sectionLabel){
+    html+=`<tr><td colspan="${deals.length+2}" style="padding:8px 14px 4px;font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;background:#fafafa;border-top:1px solid #e2e8f0">${sectionLabel}</td></tr>`;
+    metrics.forEach(m=>{
+      const avg=portAvg(m.key);
+      const rowStyle=m.bold?'font-weight:700;background:#f8fafc':'';
+      html+=`<tr style="border-bottom:1px solid #f1f5f9">
+        <td style="padding:8px 14px;color:#374151;position:sticky;left:0;background:${m.bold?'#f8fafc':'#fff'};z-index:1;${rowStyle}">${m.label}</td>`;
+      extracted.forEach(({deal,vals})=>{
+        const v=vals[m.key];
+        const bg=m.bold?'':heatBg(v,avg,m.favorLow);
+        html+=`<td style="text-align:right;padding:8px 14px;${bg?'background:'+bg+';':''};${rowStyle}">${fmt(v)}</td>`;
+      });
+      html+=`<td style="text-align:right;padding:8px 14px;background:#f1f5f9;border-left:2px solid #e2e8f0;${rowStyle}">${fmt(avg)}</td></tr>`;
+    });
+  }
+
+  renderSection(incomeMetrics,'Income');
+  renderSection(expenseMetrics,'Operating Expenses');
+
+  // NOI row
+  const noiAvg=portAvg('noi');
+  html+=`<tr style="border-top:2px solid #e2e8f0;background:#f0fdf4">
+    <td style="padding:10px 14px;font-weight:700;color:#166534;position:sticky;left:0;background:#f0fdf4;z-index:1">NOI</td>`;
+  extracted.forEach(({deal,vals})=>{
+    const v=vals['noi'];
+    const bg=heatBg(v,noiAvg,false);
+    html+=`<td style="text-align:right;padding:10px 14px;font-weight:700;color:#166534;${bg?'background:'+bg+';':''}">${fmt(v)}</td>`;
+  });
+  html+=`<td style="text-align:right;padding:10px 14px;font-weight:700;color:#166534;background:#f0fdf4;border-left:2px solid #e2e8f0">${fmt(noiAvg)}</td></tr>`;
+
+  html+=`</tbody></table>`;
+  html+=`<div style="margin-top:10px;font-size:11px;color:#9ca3af;padding:0 2px">
+    Heat map: <span style="background:rgba(22,163,74,0.15);padding:1px 6px;border-radius:3px">green = favorable vs portfolio avg</span> &nbsp;
+    <span style="background:rgba(220,38,38,0.15);padding:1px 6px;border-radius:3px">red = unfavorable vs portfolio avg</span>
+  </div>`;
+
+  el.innerHTML=html;
+}
 
 /* ============ Init ============ */
 (async function(){ await load(); renderAll(); updateHdr(); })();

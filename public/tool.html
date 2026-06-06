@@ -24451,14 +24451,14 @@ function parseT12(wb){
   const noi           = fig('69999-099','Net Operating Income',   /^(net operating income|net income|noi)\s*$/i);
   let   noiAfterRepl  = fig('71999-099','NOI After Replacements', /^noi after (repl|res)/i);
   const netIncome     = fig('89999-099','Total Non-Operating Expense');
-  const potentialRent = fig('41029-099','Potential Rent',         /^potential rent/i);
+  const potentialRent = fig('41029-099','Potential Rent',         /^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent)\s*$/i);
   const finalNet      = fig('84999-099','');
   // ---- expense categories: [account code, display name, label-regex fallback] ----
   const expenseCats=[
-    ['51599-099','Payroll & Benefits',       /^(total )?payroll(\s*&\s*benefits)?\s*$/i],
-    ['53999-099','General Maintenance',      /^(total )?(general maintenance|repairs?\s*&\s*maint(enance)?|contract services)\s*$/i],
+    ['51599-099','Payroll & Benefits',       /^(total )?payroll(\s*&\s*benefits|\s+expense)?\s*$/i],
+    ['53999-099','General Maintenance',      /^(total )?(general maintenance|repairs?\s*&\s*maint(enance)?|contract services|maintenance\s*&?\s*repair)\s*$/i],
     ['54999-099','Advertising / Marketing',  /^(total )?(advertising|marketing)(\s+expenses?)?\s*$/i],
-    ['58399-099','General & Administrative', /^(total )?general(\s*&\s*|\s+)admin(istrative)?\s*$/i],
+    ['58399-099','General & Administrative', /^(total )?(general(\s*&\s*|\s+)admin(istrative)?|administrative(\s+expense)?)\s*$/i],
     ['59999-099','Utilities',                /^(total )?utilities\s*$/i],
     ['61999-099','Management Fees',          /^(total )?management fees?\s*$/i],
     ['62999-099','Taxes',                    /^(total )?(taxes?\s*(&\s*insurance)?|real estate taxes?)\s*$/i],
@@ -28301,41 +28301,54 @@ async function renderPortfolioComparison(){
   function extractValues(deal){
     const t=deal.t12||{};
     const units=deal.unitCount||1;
+    // Annualize partial-year data (e.g. One at Penn = 4 months → ×3)
+    const nMos=t.months?.length||12;
+    const ann=nMos<12?12/nMos:1;
+    const puA=(val)=>val==null||!units?null:val*ann/units/div;
+
     const catMap={};
-    (t.categories||[]).forEach(c=>{ catMap[c.acct||c.label]=c.total; });
+    (t.categories||[]).forEach(c=>{
+      catMap[c.acct]=c.total;
+      catMap[c.name]=c.total;
+      catMap[c.label]=c.total;
+    });
 
     // Income lines — search by label regex across incomeLines array
     const incLines=t.incomeLines||[];
     const findInc=re=>{ const l=incLines.find(x=>re.test(x.label||x.acct||'')); return l?l.total:null; };
 
-    // Primary lookups
     let potRent  = t.potentialRent?.total ?? findInc(/potential|scheduled rent|gross potential/i);
     let otherRent= findInc(/other rental/i);
     let otherInc = findInc(/other income/i);
     const totalInc = t.totalIncome?.total;
 
-    // Fallback: if individual lines missing but total income exists, try to
-    // compute potential rent as totalIncome − otherRent − otherInc
     if(potRent==null && totalInc!=null){
       const knownOther=(otherRent||0)+(otherInc||0);
       if(knownOther>0) potRent=totalInc-knownOther;
     }
 
+    // Derive OpEx from category sum if not directly parsed
+    const catSum=(t.categories||[]).reduce((s,c)=>s+(c.total||0),0);
+    const opexTotal=t.totalOpEx?.total??(catSum>0?catSum:null);
+
+    // Derive NOI when not parsed
+    const noiTotal=t.noi?.total??(totalInc!=null&&opexTotal!=null?totalInc-opexTotal:null);
+
     return{
-      potRent:  pu(potRent, units),
-      otherRent:pu(otherRent, units),
-      otherInc: pu(otherInc, units),
-      totalInc: pu(totalInc, units),
-      totalOpEx:pu(t.totalOpEx?.total, units),
-      noi:      pu(t.noi?.total, units),
-      '51599-099': pu(catMap['51599-099']??catMap['Payroll & Benefits'], units),
-      '53999-099': pu(catMap['53999-099']??catMap['General Maintenance'], units),
-      '54999-099': pu(catMap['54999-099']??catMap['Advertising / Marketing'], units),
-      '58399-099': pu(catMap['58399-099']??catMap['General & Administrative'], units),
-      '59999-099': pu(catMap['59999-099']??catMap['Utilities'], units),
-      '61999-099': pu(catMap['61999-099']??catMap['Management Fees'], units),
-      '62999-099': pu(catMap['62999-099']??catMap['Taxes'], units),
-      '63999-099': pu(catMap['63999-099']??catMap['Insurance'], units),
+      potRent:  puA(potRent),
+      otherRent:puA(otherRent),
+      otherInc: puA(otherInc),
+      totalInc: puA(totalInc),
+      totalOpEx:puA(opexTotal),
+      noi:      puA(noiTotal),
+      '51599-099': puA(catMap['51599-099']??catMap['Payroll & Benefits']),
+      '53999-099': puA(catMap['53999-099']??catMap['General Maintenance']),
+      '54999-099': puA(catMap['54999-099']??catMap['Advertising / Marketing']),
+      '58399-099': puA(catMap['58399-099']??catMap['General & Administrative']),
+      '59999-099': puA(catMap['59999-099']??catMap['Utilities']),
+      '61999-099': puA(catMap['61999-099']??catMap['Management Fees']),
+      '62999-099': puA(catMap['62999-099']??catMap['Taxes']),
+      '63999-099': puA(catMap['63999-099']??catMap['Insurance']),
     };
   }
 

@@ -1,7 +1,24 @@
 import { NextResponse } from 'next/server'
 import { parseT12 } from '@/lib/t12-parser'
+import { parseComparisonT12 } from '@/lib/comparison-t12-parser'
+import * as XLSX from 'xlsx'
 import supabase from '@/lib/supabase'
 import { requireAuth, canAccessDeal } from '@/lib/auth'
+
+function detectT12Format(buffer) {
+  try {
+    const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 3, cellDates: true })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const grid = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null })
+    const row0 = grid[0] || []
+    const row1 = grid[1] || []
+    // Comparison format: row 0 has Date objects, row 1 has Actual/Budget strings
+    const hasDates = row0.some(v => v instanceof Date)
+    const hasActualBudget = row1.some(v => typeof v === 'string' && /^(actual|budget)$/i.test(String(v).trim()))
+    if (hasDates && hasActualBudget) return 'comparison'
+  } catch (_) {}
+  return 'standard'
+}
 
 export async function POST(request) {
   const auth = await requireAuth(request)
@@ -17,7 +34,8 @@ export async function POST(request) {
     if (!canAccessDeal(auth, dealId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    const parsed = parseT12(buffer)
+    const format = detectT12Format(buffer)
+    const parsed = format === 'comparison' ? parseComparisonT12(buffer) : parseT12(buffer)
 
     if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
 

@@ -25082,13 +25082,62 @@ function handleMarketFile(file){
   reader.readAsArrayBuffer(file);
 }
 
+/* ============ Comparison T-12 Parser (One at Penn / date-header format) ============ */
+function parseComparisonT12(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const row0=grid[0]||[], row1=grid[1]||[];
+  const numV=v=>{if(v==null)return null;if(typeof v==='number')return v;const s=String(v).replace(/,/g,'').trim();if(/^\([\d.]+\)$/.test(s))return-parseFloat(s.slice(1,-1));const n=parseFloat(s);return isNaN(n)?null:n;};
+  const toLabel=v=>{let d=v;if(typeof d==='number')d=new Date(Math.round((d-25569)*86400*1000));if(!(d instanceof Date)||isNaN(d))return null;return['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()]+' '+d.getUTCFullYear();};
+  const colToMonth={};
+  row0.forEach((v,ci)=>{const l=toLabel(v);if(l)colToMonth[ci]=l;});
+  const actualCols=[];
+  row1.forEach((v,ci)=>{if(typeof v==='string'&&/^actual$/i.test(v.trim()))actualCols.push(ci);});
+  if(!actualCols.length)return{error:'Could not find Actual month columns — is this a comparison report?'};
+  const seen=new Set();
+  const months=actualCols.map((ci,idx)=>{
+    let label=null;for(let c=ci;c>=0;c--){if(colToMonth[c]){label=colToMonth[c];break;}}
+    label=label||'Month '+(idx+1);
+    if(seen.has(label))return null;seen.add(label);return{ci,label};
+  }).filter(Boolean);
+  const period=months.length?months[0].label+(months.length>1?' – '+months[months.length-1].label:''):'';
+  const readRow=ri=>{if(ri<0)return null;const row=grid[ri]||[];const vals=months.map(m=>numV(row[m.ci]));const total=vals.reduce((s,v)=>v!=null?s+v:s,0);return vals.some(v=>v!=null)?{vals,total}:null;};
+  const findRow=re=>{for(let r=2;r<grid.length;r++){const c=String(grid[r]?.[0]||'').trim();if(re.test(c.split(/\r?\n/)[0])||re.test(c))return r;}return-1;};
+  const fig=(re,label,acct='')=>{const d=readRow(findRow(re));return d?{label,acct,vals:d.vals,total:d.total}:null;};
+  const combine=(res,label,acct)=>{const parts=res.map(re=>fig(re,label,acct)).filter(Boolean);if(!parts.length)return null;const vals=months.map((_,i)=>parts.reduce((s,p)=>p.vals[i]!=null?s+p.vals[i]:s,0)||null);return{label,acct,vals,total:vals.reduce((s,v)=>v!=null?s+v:s,0)};};
+  const totalIncome  =fig(/^total income$/i,              'Total Income',             '49999-999');
+  const totalOpEx    =fig(/^total expenses?$/i,            'Total Operating Expenses', '66999-199');
+  const noi          =fig(/^net operating income$/i,       'Net Operating Income',     '69999-099');
+  const potentialRent=fig(/^total (possible|net) rent$/i,  'Potential Rent',           '41029-099');
+  const otherIncome  =fig(/^total other income$/i,         'Total Other Income',       '43599-099');
+  const taxInsTotal  =fig(/^total tax\s*[&and]+\s*insurance/i,'Taxes & Insurance',     '62999-099');
+  const taxesOnly    =fig(/^total (real estate )?taxes?$/i,'Taxes',                    '62999-099');
+  const insurOnly    =fig(/^total insurance$/i,            'Insurance',                '63999-099');
+  const maintenance  =combine([/^total maintenance/i,/^total contracted services?$/i,/^total painting/i],'General Maintenance','53999-099');
+  const categories=[
+    fig(/^total salaries expense$/i,       'Payroll & Benefits',      '51599-099'),
+    maintenance,
+    fig(/^total advertising/i,             'Advertising \/ Marketing','54999-099'),
+    fig(/^total administrative expense$/i, 'General & Administrative','58399-099'),
+    fig(/^total utilities$/i,              'Utilities',               '59999-099'),
+    fig(/^total management fees?$/i,       'Management Fees',         '61999-099'),
+    taxesOnly||taxInsTotal,
+    insurOnly,
+  ].filter(Boolean);
+  return{months,period,totalIncome,totalOpEx,noi,noiAfterRepl:null,potentialRent,incomeLines:[potentialRent,otherIncome].filter(Boolean),categories,belowNOI:[]};
+}
+
 function handleT12File(file){
   const reader=new FileReader();
   reader.onload=e=>{
     const rpt=document.getElementById('t12Report');
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
-      const res=parseT12(wb);
+      // Detect comparison format: row 0 has Date objects, row 1 has Actual/Budget strings
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const hdr=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null,sheetRows:2});
+      const isComparison=(hdr[0]||[]).some(v=>v instanceof Date)&&(hdr[1]||[]).some(v=>typeof v==='string'&&/^(actual|budget)$/i.test(String(v).trim()));
+      const res=isComparison?parseComparisonT12(wb):parseT12(wb);
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.t12=res;
       save();

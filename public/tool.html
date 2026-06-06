@@ -24394,23 +24394,29 @@ function parseT12(wb){
     if(mR>0) ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mR,c:mC}});
   }
   const grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
-  // find the month header row: the row with the MOST "Mon YYYY" cells
+  // Convert "MM/DD/YYYY" → "Apr 2026"
+  const MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const mmddToLabel=s=>{const m=String(s||'').trim().match(/^(\d{1,2})\/\d{1,2}\/(\d{4})$/);return m?MONS[parseInt(m[1],10)-1]+' '+m[2]:null;};
+  // find the month header row: most "Mon YYYY" or "MM/DD/YYYY" cells
   let hdrRow=-1, bestCount=0;
   for(let i=0;i<14&&i<grid.length;i++){
     const row=grid[i]||[];
-    const cnt=row.filter(v=>/^[A-Za-z]{3,}\s+\d{4}$/.test(String(v||'').trim())).length;
+    const cnt=row.filter(v=>{const s=String(v||'').trim();return /^[A-Za-z]{3,}\s+\d{4}$/.test(s)||/^\d{1,2}\/\d{2}\/\d{4}$/.test(s);}).length;
     if(cnt>bestCount){ bestCount=cnt; hdrRow=i; }
   }
   if(hdrRow<0||bestCount<2) return {error:'Could not find the month header row — is this a Yardi T-12?'};
-  // month columns: collect cells that look like "Mon YYYY"
+  // month columns: collect cells that look like "Mon YYYY" or "MM/DD/YYYY"
   const months=[];
   (grid[hdrRow]||[]).forEach((v,ci)=>{
     const s=String(v||'').trim();
     if(/^[A-Za-z]{3,}\s+\d{4}$/.test(s)) months.push({ci,label:s});
+    else{const lbl=mmddToLabel(s);if(lbl)months.push({ci,label:lbl});}
   });
-  // total column = the one labelled "Total"
+  // total column = "Total" or "12-Month Total" — check hdrRow and the row above
   let totalCi=-1;
-  (grid[hdrRow]||[]).forEach((v,ci)=>{ if(/^total$/i.test(String(v||'').trim())) totalCi=ci; });
+  for(let rr=Math.max(0,hdrRow-1);rr<=hdrRow;rr++){
+    (grid[rr]||[]).forEach((v,ci)=>{ if(/^(total|12.?month total)$/i.test(String(v||'').trim())) totalCi=ci; });
+  }
   // helper: read a row's 12 monthly values + total
   const readRow=(r)=>{
     const row=grid[r]||[];
@@ -24446,28 +24452,56 @@ function parseT12(wb){
     return {label, acct, row:r, vals:d.vals, total:d.total};
   };
   // ---- headline operating lines (anchored on Yardi subtotal codes) ----
-  const totalIncome   = fig('49999-999','Total Income',           /^(total income|total revenue|effective gross income|egi|income)\s*$/i);
+  const totalIncome   = fig('49999-999','Total Income',           /^(total (income|revenue)|effective gross income|egi|total revenue)\s*$/i);
   const totalOpEx     = fig('66999-199','Total Operating Expenses',/^(total (operating )?expens(es?)?|operating expenses?|total expenses?)\s*$/i);
-  const noi           = fig('69999-099','Net Operating Income',   /^(net operating income|net income|noi)\s*$/i);
+  const noi           = fig('69999-099','Net Operating Income',   /^(net operating income\/?(\(loss\))?|net income|noi)\s*$/i);
   let   noiAfterRepl  = fig('71999-099','NOI After Replacements', /^noi after (repl|res)/i);
   const netIncome     = fig('89999-099','Total Non-Operating Expense');
-  const potentialRent = fig('41029-099','Potential Rent',         /^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent)\s*$/i);
+  const potentialRent = fig('41029-099','Potential Rent',         /^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent)\s*$/i);
   const finalNet      = fig('84999-099','');
+  // figMany: find ALL rows matching any regex and sum them (for multi-subtotal categories)
+  const figMany=(acct,label,reArray)=>{
+    const found=[]; const seenRows=new Set();
+    const primary=byAcct[acct]; if(primary!=null){found.push(readRow(primary));seenRows.add(primary);}
+    for(const re of reArray){
+      for(let r=hdrRow+1;r<grid.length;r++){
+        if(seenRows.has(r))continue;
+        for(let ci=0;ci<6;ci++){
+          if(re.test(String((grid[r]||[])[ci]||'').trim())){
+            const d=readRow(r);if(d.total!=null||d.vals.some(v=>v!=null)){found.push(d);seenRows.add(r);}
+            break;
+          }
+        }
+      }
+    }
+    if(!found.length)return null;
+    const vals=months.map((_,i)=>found.reduce((s,d)=>d.vals[i]!=null?s+d.vals[i]:s,0)||null);
+    return{label,name:label,acct,row:-1,vals,total:vals.reduce((s,v)=>v!=null?s+v:s,0)};
+  };
+  const maintRe=[
+    /^(total )?(general maintenance|repairs?\s*&\s*maint(enance)?|maintenance(\s*&?\s*repair)?)\s*$/i,
+    /^(total )?painting(\s*(&|and)\s*decorat(ing)?)?\s*$/i,
+    /^(total )?contracted?\s*services?\s*$/i,
+    /^(total )?contract\s*services?\s*$/i,
+  ];
   // ---- expense categories: [account code, display name, label-regex fallback] ----
   const expenseCats=[
-    ['51599-099','Payroll & Benefits',       /^(total )?payroll(\s*&\s*benefits|\s+expense)?\s*$/i],
-    ['53999-099','General Maintenance',      /^(total )?(general maintenance|repairs?\s*&\s*maint(enance)?|contract services|maintenance\s*&?\s*repair)\s*$/i],
-    ['54999-099','Advertising / Marketing',  /^(total )?(advertising|marketing)(\s+expenses?)?\s*$/i],
+    ['51599-099','Payroll & Benefits',       /^(total )?(payroll(\s*&\s*benefits|\s+expense)?|salaries(\s+expense)?)\s*$/i],
+    ['54999-099','Advertising / Marketing',  /^(total )?(advertising(\s*(&|and)\s*promotion)?|marketing)(\s+expenses?)?\s*$/i],
     ['58399-099','General & Administrative', /^(total )?(general(\s*&\s*|\s+)admin(istrative)?|administrative(\s+expense)?)\s*$/i],
     ['59999-099','Utilities',                /^(total )?utilities\s*$/i],
     ['61999-099','Management Fees',          /^(total )?management fees?\s*$/i],
-    ['62999-099','Taxes',                    /^(total )?(taxes?\s*(&\s*insurance)?|real estate taxes?)\s*$/i],
-    ['63999-099','Insurance',                /^(total )?insurance\s*$/i]
+    ['62999-099','Taxes',                    /^(total )?(tax(es?)?(\s*[&and]+\s*insurance)?(\s+expense)?|real estate tax(es?)?)\s*$/i],
+    ['63999-099','Insurance',                /^(total )?insurance(\s+expense)?\s*$/i]
   ];
-  const categories=expenseCats.map(([acct,name,re])=>{
-    const f=fig(acct,name,re);
-    return f?{...f,name}:null;
-  }).filter(Boolean);
+  const maint=figMany('53999-099','General Maintenance',maintRe);
+  const categories=[
+    maint?{...maint,name:'General Maintenance'}:null,
+    ...expenseCats.map(([acct,name,re])=>{
+      const f=fig(acct,name,re);
+      return f?{...f,name}:null;
+    })
+  ].filter(Boolean);
   // sub-category rollups for the two parent categories that nest subtotals
   const subCats={
     '53999-099':[  // General Maintenance
@@ -24540,7 +24574,12 @@ function parseT12(wb){
   ].filter(Boolean);
 
   let period='';
-  for(let i=0;i<10;i++){const v=String((grid[i]||[])[0]||'').trim();if(/\w+ \d{4}\s*[-–]\s*\w+ \d{4}/.test(v)||/period\s*=/i.test(v)){period=v.replace(/period\s*=\s*/i,'').trim();break;}}
+  for(let i=0;i<10&&!period;i++){
+    const v=String((grid[i]||[])[0]||'').trim();
+    if(/\w+ \d{4}\s*[-–]\s*\w+ \d{4}/.test(v)||/period\s*=/i.test(v)){period=v.replace(/period\s*=\s*/i,'').trim();}
+    else if(/as of date/i.test(v)){const dc=String((grid[i]||[])[1]||'').trim();const lbl=mmddToLabel(dc);period=lbl||dc;}
+  }
+  if(!period&&months.length){const last=months[months.length-1].label,first=months[0].label;period=last!==first?last+' – '+first:last;}
   return {
     months, period,
     totalIncome, totalOpEx, noi, noiAfterRepl,

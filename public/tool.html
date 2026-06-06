@@ -24460,7 +24460,9 @@ function parseT12(wb){
   const noi           = fig('69999-099','Net Operating Income',   /^(net operating income\/?(\(loss\))?|net income|noi)\s*$/i);
   let   noiAfterRepl  = fig('71999-099','NOI After Replacements', /^noi after (repl|res)/i);
   const netIncome     = fig('89999-099','Total Non-Operating Expense');
-  const potentialRent = fig('41029-099','Potential Rent',         /^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent)\s*$/i);
+  const potentialRent =
+    fig('41029-099','Potential Rent',/^total gpa\s*$/i)||
+    fig('41029-099','Potential Rent',/^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent)\s*$/i);
   const finalNet      = fig('84999-099','');
   // figMany: find ALL rows matching any regex and sum them (for multi-subtotal categories)
   const figMany=(acct,label,reArray)=>{
@@ -24574,13 +24576,21 @@ function parseT12(wb){
   });
   belowNOI.forEach(c=>{ c.items=detailFor(c.row); });
 
-  // income detail: rows between 'Total Income' header area — capture key income lines
-  // grab the major income subtotals
+  // income detail
+  const ilPotRent=fig('41029-099','Potential Rent',/^total gpa\s*$/i)||fig('41029-099','Potential Rent',/^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent)\s*$/i);
+  const ilOtherRentalRe=[/^less:?\s*concessions?/i,/^less:?\s*vacancy/i,/^less:?\s*write.?offs?/i,/^less:?\s*employee rent concession/i,/^(total )?(other rental (income|inc\.?)|rental losses?)\s*$/i];
+  const ilOtherRent=figMany('41999-098','Total Other Rental Inc.',ilOtherRentalRe);
+  let ilOtherInc=fig('43599-099','Total Other Income',/^(total )?other income\s*$/i);
+  if(totalIncome&&(ilPotRent||potentialRent)&&ilOtherRent){
+    const pr=ilPotRent||potentialRent;
+    const vals=totalIncome.vals.map((v,i)=>v!=null?v-(pr.vals[i]||0)-(ilOtherRent.vals[i]||0):null);
+    ilOtherInc={label:'Total Other Income',name:'Total Other Income',acct:'43599-099',vals,total:totalIncome.total-pr.total-ilOtherRent.total};
+  }
   const incomeLines=[
-    fig('41029-099','Potential Rent',          /^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent)\s*$/i),
-    fig('41999-098','Total Other Rental Inc.', /^(total )?(other rental (income|inc\.?)|rental losses?)\s*$/i),
-    fig('43599-099','Total Other Income',      /^(total )?other income\s*$/i),
-    fig('42099-099','Total Corporate Housing', /^(total )?corporate housing\s*$/i),
+    ilPotRent,
+    ilOtherRent,
+    ilOtherInc,
+    fig('42099-099','Total Corporate Housing',/^(total )?corporate housing\s*$/i),
   ].filter(Boolean);
 
   let period='';

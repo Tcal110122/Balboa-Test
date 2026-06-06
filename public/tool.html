@@ -26058,6 +26058,12 @@ function renderIncome(){
       if(idx!=null){
         const f=t12HeadFor[metricKey];
         if(f&&f.vals&&f.vals[idx]!=null) return f.vals[idx];
+        // Fallback for NOI: derive from income − opex for this month
+        if(metricKey==='noi'||metricKey==='noiAR'){
+          const iv=t12HeadFor.income?.vals?.[idx];
+          const ov=t12HeadFor.opex?.vals?.[idx];
+          if(iv!=null&&ov!=null) return iv-ov;
+        }
       }
       return null;
     };

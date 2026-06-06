@@ -25103,8 +25103,8 @@ function parseComparisonT12(wb){
   const period=months.length?months[0].label+(months.length>1?' – '+months[months.length-1].label:''):'';
   const readRow=ri=>{if(ri<0)return null;const row=grid[ri]||[];const vals=months.map(m=>numV(row[m.ci]));const total=vals.reduce((s,v)=>v!=null?s+v:s,0);return vals.some(v=>v!=null)?{vals,total}:null;};
   const findRow=re=>{for(let r=2;r<grid.length;r++){const c=String(grid[r]?.[0]||'').trim();if(re.test(c.split(/\r?\n/)[0])||re.test(c))return r;}return-1;};
-  const fig=(re,label,acct='')=>{const d=readRow(findRow(re));return d?{label,acct,vals:d.vals,total:d.total}:null;};
-  const combine=(res,label,acct)=>{const parts=res.map(re=>fig(re,label,acct)).filter(Boolean);if(!parts.length)return null;const vals=months.map((_,i)=>parts.reduce((s,p)=>p.vals[i]!=null?s+p.vals[i]:s,0)||null);return{label,acct,vals,total:vals.reduce((s,v)=>v!=null?s+v:s,0)};};
+  const fig=(re,label,acct='')=>{const d=readRow(findRow(re));return d?{label,name:label,acct,vals:d.vals,total:d.total,items:[]}:null;};
+  const combine=(res,label,acct)=>{const parts=res.map(re=>fig(re,label,acct)).filter(Boolean);if(!parts.length)return null;const vals=months.map((_,i)=>parts.reduce((s,p)=>p.vals[i]!=null?s+p.vals[i]:s,0)||null);return{label,name:label,acct,vals,total:vals.reduce((s,v)=>v!=null?s+v:s,0),items:[]};};
   const totalIncome  =fig(/^total income$/i,              'Total Income',             '49999-999');
   const totalOpEx    =fig(/^total expenses?$/i,            'Total Operating Expenses', '66999-199');
   const noi          =fig(/^net operating income$/i,       'Net Operating Income',     '69999-099');

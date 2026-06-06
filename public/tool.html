@@ -24447,8 +24447,8 @@ function parseT12(wb){
   };
   // ---- headline operating lines (anchored on Yardi subtotal codes) ----
   const totalIncome   = fig('49999-999','Total Income',           /^(total income|total revenue|effective gross income|egi|income)\s*$/i);
-  const totalOpEx     = fig('66999-199','Total Operating Expenses',/^(total (oper|expens)|operating expenses)\s*$/i);
-  const noi           = fig('69999-099','Net Operating Income',   /^net operating income\s*$/i);
+  const totalOpEx     = fig('66999-199','Total Operating Expenses',/^(total (operating )?expens(es?)?|operating expenses?|total expenses?)\s*$/i);
+  const noi           = fig('69999-099','Net Operating Income',   /^(net operating income|net income|noi)\s*$/i);
   let   noiAfterRepl  = fig('71999-099','NOI After Replacements', /^noi after (repl|res)/i);
   const netIncome     = fig('89999-099','Total Non-Operating Expense');
   const potentialRent = fig('41029-099','Potential Rent',         /^potential rent/i);
@@ -25967,7 +25967,21 @@ function renderIncome(){
   const isPartial = nMos < 12;
   const periodLabel = isPartial ? `${nMos}-month YTD` : 'T-12';
   const avgMo=v=>v==null?null:v/nMos;
-  const inc=t.totalIncome, opex=t.totalOpEx, noi=t.noi, noiAR=t.noiAfterRepl;
+  const inc=t.totalIncome;
+  // Derive OpEx from category sum if totalOpEx row wasn't found in the file
+  let opex=t.totalOpEx;
+  if(!opex && t.categories?.length){
+    const catVals=(t.months||[]).map((_,i)=>t.categories.reduce((s,c)=>s+(c.vals?.[i]||0),0));
+    const catTotal=catVals.reduce((s,v)=>s+v,0);
+    if(catTotal>0) opex={label:'Total Operating Expenses',vals:catVals,total:catTotal};
+  }
+  // Derive NOI from income - opex if not found
+  let noi=t.noi;
+  if(!noi && inc && opex){
+    const noiVals=(inc.vals||[]).map((v,i)=>v!=null&&opex.vals?.[i]!=null?v-opex.vals[i]:null);
+    noi={label:'Net Operating Income',vals:noiVals,total:(inc.total||0)-(opex.total||0)};
+  }
+  const noiAR=t.noiAfterRepl;
   const opexPctEGI=(inc&&inc.total&&opex)?opex.total/inc.total*100:null;
   const noiMargin=(inc&&inc.total&&noi)?noi.total/inc.total*100:null;
 

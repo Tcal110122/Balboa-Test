@@ -28441,7 +28441,7 @@ async function renderPortfolioComparison(){
   const extracted=deals.map(d=>({deal:d, vals:extractValues(d)}));
 
   // Deals excluded from heat map avg (lease-up distorts comparison)
-  const heatExclude=d=>/irvington/i.test(d.name);
+  const heatExclude=d=>/irvington|11th.*(spruce|and spruce)|spruce.*11th/i.test(d.name);
 
   // Weighted portfolio avg for a key (weight by unit count, excludes lease-up deals)
   function portAvg(key){

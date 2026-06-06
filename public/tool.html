@@ -24446,6 +24446,19 @@ function parseT12(wb){
     }
     return null;
   };
+  // findSubtotalRow: prefer blank-col-0 rows (subtotals); falls back to findRow
+  const findSubtotalRow=(re)=>{
+    for(let r=hdrRow+1;r<grid.length;r++){
+      const col0=String((grid[r]||[])[0]||'').trim();
+      if(col0) continue;
+      for(let ci=1;ci<6;ci++){
+        const raw=String((grid[r]||[])[ci]||'').trim();
+        if(re.test(raw)||re.test(stripAcct(raw))){const d=readRow(r);if(d.total!=null||d.vals.some(v=>v!=null))return r;break;}
+      }
+    }
+    return findRow(re);
+  };
+  const figSubtotal=(acct,label,re)=>{let r=byAcct[acct];if(r==null&&re)r=findSubtotalRow(re);if(r==null)return null;const d=readRow(r);return{label,acct,row:r,vals:d.vals,total:d.total};};
   // pull a figure by account code, with optional label-regex fallback
   const fig=(acct,label,re)=>{
     let r=byAcct[acct];
@@ -24455,7 +24468,7 @@ function parseT12(wb){
     return {label, acct, row:r, vals:d.vals, total:d.total};
   };
   // ---- headline operating lines (anchored on Yardi subtotal codes) ----
-  const totalIncome   = fig('49999-999','Total Income',           /^(total (income|revenue)|effective gross income|egi|total revenue|income)\s*$/i);
+  const totalIncome   = figSubtotal('49999-999','Total Income',   /^(total (income|revenue)|effective gross income|egi|total revenue|income)\s*$/i);
   const totalOpEx     = fig('66999-199','Total Operating Expenses',/^(total (operating )?expens(es?)?|operating expenses?|total expenses?)\s*$/i);
   const noi           = fig('69999-099','Net Operating Income',   /^(net operating income\/?(\(loss\))?|net income|noi)\s*$/i);
   let   noiAfterRepl  = fig('71999-099','NOI After Replacements', /^noi after (repl|res)/i);
@@ -24596,7 +24609,7 @@ function parseT12(wb){
   const ilPotRent=fig('41029-099','Potential Rent',/^total gpa\s*$/i)||fig('41029-099','Potential Rent',/^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent)\s*$/i);
   const ilOtherRentalRe=[/^less:?\s*concessions?/i,/^less:?\s*vacancy/i,/^less:?\s*write.?offs?/i,/^less:?\s*employee rent concession/i,/^(total )?(other rental (income|inc\.?)|rental losses?)\s*$/i,/^vacancies\s*(&|and)\s*concessions?\s*$/i];
   const ilOtherRent=figMany('41999-098','Total Other Rental Inc.',ilOtherRentalRe);
-  let ilOtherInc=fig('43599-099','Total Other Income',/^(total )?other income\s*$/i);
+  let ilOtherInc=figSubtotal('43599-099','Total Other Income',/^(total )?other income\s*$/i);
   if(!ilOtherInc&&totalIncome&&(ilPotRent||potentialRent)&&ilOtherRent){
     const pr=ilPotRent||potentialRent;
     const vals=totalIncome.vals.map((v,i)=>v!=null?v-(pr.vals[i]||0)-(ilOtherRent.vals[i]||0):null);

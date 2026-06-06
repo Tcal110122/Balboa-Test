@@ -25284,6 +25284,50 @@ function parseStudentBudget(wb){
     headline,catLines,scorecard,budgetType:'student'};
 }
 
+/* ============ Budget Import (RealPage Conventional Jan-Dec) ============ */
+function parseRealPageBudget(wb){
+  const MON3=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const snum=v=>{const n=parseFloat(String(v||'').replace(/,/g,''));return isNaN(n)?null:n;};
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  // Find header row: has 10+ month labels like "Jan-2026"
+  let hdrRow=-1; const monCols={};
+  for(let r=0;r<Math.min(15,grid.length);r++){
+    const row=grid[r]||[]; const hits=[];
+    row.forEach((v,ci)=>{const m=String(v||'').trim().match(/^([A-Za-z]{3})-(\d{2,4})$/);if(m&&MON3.includes(m[1].toLowerCase()))hits.push({ci,mon:m[1].toLowerCase()});});
+    if(hits.length>=10){hdrRow=r;hits.forEach(h=>{monCols[h.mon]=h.ci;});break;}
+  }
+  if(hdrRow<0)return{error:'Could not find month header row in RealPage budget.'};
+  const monthOrder=MON3.filter(m=>monCols[m]!=null);
+  const readM=ri=>{const row=grid[ri]||[];const o={};monthOrder.forEach(m=>{o[m]=snum(row[monCols[m]]);});return o;};
+  const findRow=re=>{for(let r=hdrRow+1;r<grid.length;r++){if(re.test(String(grid[r]?.[0]||'').trim()))return r;}return-1;};
+  const budM=re=>{const r=findRow(re);return r>=0?readM(r):null;};
+  const income=budM(/^TOTAL INCOME$/i);
+  const opex  =budM(/^TOTAL OPERATING EXPENSE$/i);
+  const noi   =budM(/^Total NET OPERATING INCOME$/i);
+  const sal   =budM(/^Salaries Expense$/i);
+  const mRaw  =budM(/^Maintenance & Repair$/i);
+  const pRaw  =budM(/^Painting & Decorating$/i);
+  const cRaw  =budM(/^Contracted Services$/i);
+  const maint =monthOrder.reduce((o,m)=>{o[m]=(mRaw?.[m]||0)+(pRaw?.[m]||0)+(cRaw?.[m]||0)||null;return o;},{});
+  const adv   =budM(/^Advertising & Promotion$/i);
+  const admin =budM(/^Administrative Expense$/i);
+  const util  =budM(/^Utilities$/i);
+  const mgmt  =budM(/^Management Fees$/i);
+  const taxIns=budM(/^Tax & Insurance Expense$/i);
+  const nullM =()=>monthOrder.reduce((o,m)=>{o[m]=null;return o;},{});
+  const sc=bud=>({budget:bud||nullM(),actual:nullM()});
+  const catLine=bud=>{if(!bud)return null;const monthly={...bud};const fyBudget=monthOrder.reduce((s,m)=>s+(bud[m]||0),0);return{monthly,fyBudget,ytdBudget:null,ytdActual:null,ytdVar:null};};
+  const scorecard={
+    income:sc(income),opex:sc(opex),noi:sc(noi),noiAR:sc(noi),
+    catByMonth:{'51599-099':sc(sal),'53999-099':sc(maint),'54999-099':sc(adv),
+      '58399-099':sc(admin),'59999-099':sc(util),'61999-099':sc(mgmt),'62999-099':sc(taxIns),'63999-099':sc(nullM())}
+  };
+  const catLines={'51599-099':catLine(sal),'53999-099':catLine(maint),'54999-099':catLine(adv),
+    '58399-099':catLine(admin),'59999-099':catLine(util),'61999-099':catLine(mgmt),'62999-099':catLine(taxIns),'63999-099':catLine(null)};
+  return{sheetName:wb.SheetNames[0],monthOrder,closedMonths:[],currentMonth:null,headline:null,catLines,scorecard,budgetType:'conventional'};
+}
+
 function handleBudgetFile(file){
   const reader=new FileReader();
   reader.onload=e=>{
@@ -25292,9 +25336,10 @@ function handleBudgetFile(file){
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
       const isRPM=wb.SheetNames.some(n=>/modeldetailview/i.test(n));
       const topText=(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''})
-        .slice(0,8).map(r=>String(r[0]||'')).join(' '));
-      const isStudent=!isRPM&&/realpage|budget year beginning/i.test(topText);
-      const res=isRPM?parseRPMBudget(wb):isStudent?parseStudentBudget(wb):parseBudget(wb);
+        .slice(0,10).map(r=>String(r[0]||'')).join('\n'));
+      const isStudent=!isRPM&&/budget year beginning august/i.test(topText);
+      const isRealPage=!isRPM&&!isStudent&&(/realpage/i.test(topText)||/budget year beginning/i.test(topText));
+      const res=isRPM?parseRPMBudget(wb):isStudent?parseStudentBudget(wb):isRealPage?parseRealPageBudget(wb):parseBudget(wb);
       if(res.error){ rpt.innerHTML='<div class="hint warn"><b>Import failed:</b> '+res.error+'</div>'; return; }
       state.budget=res;
       save();
@@ -25306,6 +25351,8 @@ function handleBudgetFile(file){
       } else if(isStudent){
         const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
         rpt.innerHTML=`<div class="hint"><b>Student budget loaded.</b> RealPage format · budget year Aug–Jul · latest closed month: <b>${cm}</b>.</div>`;
+      } else if(isRealPage){
+        rpt.innerHTML=`<div class="hint"><b>RealPage budget loaded.</b> Jan–Dec 2026 · ${res.monthOrder?.length||12} months. Scorecard and YTD detail are in the Income tab.</div>`;
       } else {
         const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
         rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · latest closed month: <b>${cm} 2026</b>. Current-month and YTD comparisons are below.</div>`;

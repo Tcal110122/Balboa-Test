@@ -40,7 +40,9 @@ function assessParse(parsed) {
 
   if (notes.filter(n => !n.includes('derived')).length === 0) return { status: 'ok', notes: [] }
   // If we at least have total income and some expenses it's usable but partial
-  if (parsed.totalIncome?.total || parsed.noi?.total) return { status: 'partial', notes }
+  // Partial if we got at least some useful numbers
+  if (parsed.totalIncome?.total || parsed.noi?.total || parsed.categories?.length >= 3)
+    return { status: 'partial', notes }
   return { status: 'failed', notes }
 }
 

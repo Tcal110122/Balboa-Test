@@ -601,6 +601,11 @@
     <div style="padding:20px 0 14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <h2 style="font-size:16px;font-weight:700;margin:0">Underwriting Deal Database</h2>
       <button id="uwAddBtn" onclick="uwShowAddForm()" style="padding:6px 16px;background:#1e293b;color:#fff;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">+ Add Deal</button>
+      <label style="padding:6px 14px;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">
+        ⬆ Batch Import JSON
+        <input type="file" accept=".json" style="display:none" onchange="uwBatchImport(this)">
+      </label>
+      <span id="uwBatchStatus" style="font-size:12px;color:#6b7280"></span>
       <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap" id="uwFilters">
         <select id="uwFMarket" onchange="uwLoad()" style="font-size:12px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px">
           <option value="">All Markets</option>
@@ -28800,6 +28805,23 @@ async function renderPortfolioComparison(){
 
 /* ============ Underwriting ============ */
 let _uwDeals=null;
+
+async function uwBatchImport(input){
+  const file=input.files[0]; if(!file) return;
+  const status=document.getElementById('uwBatchStatus');
+  status.textContent='Reading…'; status.style.color='#6b7280';
+  try{
+    const text=await file.text();
+    const deals=JSON.parse(text);
+    status.textContent=`Importing ${deals.length} deals…`;
+    const res=await fetch('/api/underwriting/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(deals)});
+    const d=await res.json();
+    if(!res.ok||d.error){ status.textContent='Error: '+d.error; status.style.color='#dc2626'; return; }
+    status.textContent=`✓ Imported ${d.inserted} deals${d.errors.length?' ('+d.errors.length+' errors)':''}`;
+    status.style.color=d.errors.length?'#d97706':'#16a34a';
+    input.value=''; _uwDeals=null; uwLoad();
+  }catch(e){ status.textContent='Error: '+e.message; status.style.color='#dc2626'; }
+}
 
 function uwShowAddForm(){ document.getElementById('uwAddForm').style.display=''; }
 function uwHideAddForm(){ document.getElementById('uwAddForm').style.display='none'; }

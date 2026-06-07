@@ -424,6 +424,7 @@
         <div style="padding:20px;color:#9ca3af;font-size:13px">Upload pre-lease reports for multiple leasing years to see the year-over-year comparison.</div>
       </div>
     </div>
+    <div id="plHistoryCharts" style="display:none;margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px"></div>
   </div>
 
   <!-- FLOORPLAN PRICING -->
@@ -28183,30 +28184,101 @@ async function renderPreleaseHistory(){
 
   if(!_plHistory?.length){
     el.innerHTML='<div style="padding:20px;color:#9ca3af;font-size:13px;line-height:1.6">No history yet. Upload pre-lease reports for multiple leasing years to track year-over-year velocity.<br>Each file\'s period label (e.g. "Fall 2026") becomes its column.</div>';
+    document.getElementById('plHistoryCharts').style.display='none';
     return;
   }
 
   // Sort chronologically by period string
   const snaps=[..._plHistory].sort((a,b)=>String(a.period).localeCompare(String(b.period)));
+  const labels=snaps.map(s=>s.period);
 
   // Collect all floor plan types across all snapshots
   const fpSet=new Set();
   snaps.forEach(s=>(s.data?.floorplans||[]).forEach(fp=>fpSet.add(fp.type)));
   const fpTypes=[...fpSet].sort();
 
-  // Build index: { period -> { fpType -> { percent, avgScheduledCharges } } }
+  // Build index: { period -> { fpType -> data } }
   const idx={};
   snaps.forEach(s=>{
     idx[s.period]={};
     (s.data?.floorplans||[]).forEach(fp=>{ idx[s.period][fp.type]=fp; });
   });
 
-  // Header
   const pctFmt=v=>v!=null?(v*100).toFixed(1)+'%':'—';
   const rentFmt=v=>v>0?'$'+Math.round(v).toLocaleString():'—';
 
+  // ---- Charts ----
+  const PALETTE=['#2563eb','#16a34a','#dc2626','#f59e0b','#8b5cf6','#0891b2','#db2777','#65a30d','#ea580c','#7c3aed'];
+  const chartsEl=document.getElementById('plHistoryCharts');
+
+  // Destroy any existing Chart.js instances on these canvases
+  ['plChartPct','plChartRent'].forEach(id=>{
+    const existing=Chart.getChart(id);
+    if(existing) existing.destroy();
+  });
+
+  chartsEl.innerHTML=`
+    <div class="card" style="margin:0">
+      <div class="card-hd"><h2>Pre-Leasing % by Floorplan</h2><span class="note">Beds signed ÷ total rentable</span></div>
+      <div class="card-bd" style="position:relative;height:260px"><canvas id="plChartPct"></canvas></div>
+    </div>
+    <div class="card" style="margin:0">
+      <div class="card-hd"><h2>Avg Contracted Rent by Floorplan</h2><span class="note">Signed beds only</span></div>
+      <div class="card-bd" style="position:relative;height:260px"><canvas id="plChartRent"></canvas></div>
+    </div>`;
+  chartsEl.style.display='grid';
+
+  const commonOpts={responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
+    scales:{x:{ticks:{font:{size:11}}},y:{ticks:{font:{size:11}}}}};
+
+  // Pre-leasing % chart
+  new Chart(document.getElementById('plChartPct'),{
+    type:'line',
+    data:{
+      labels,
+      datasets:fpTypes.map((fp,i)=>({
+        label:fp,
+        data:snaps.map(s=>{ const d=idx[s.period][fp]; return d?Math.round(d.percent*1000)/10:null; }),
+        borderColor:PALETTE[i%PALETTE.length],
+        backgroundColor:PALETTE[i%PALETTE.length]+'22',
+        tension:0.3, pointRadius:5, pointHoverRadius:7, spanGaps:true
+      })).concat([{
+        label:'Total',
+        data:snaps.map(s=>{ const t=s.data?.totals; return t?Math.round(t.percent*1000)/10:null; }),
+        borderColor:'#1e293b', backgroundColor:'#1e293b22',
+        borderDash:[5,3], tension:0.3, pointRadius:5, spanGaps:true
+      }])
+    },
+    options:{...commonOpts, scales:{...commonOpts.scales, y:{...commonOpts.scales.y,
+      ticks:{...commonOpts.scales.y.ticks, callback:v=>v+'%'}, min:0, max:100}}}
+  });
+
+  // Contracted rent chart
+  new Chart(document.getElementById('plChartRent'),{
+    type:'line',
+    data:{
+      labels,
+      datasets:fpTypes.map((fp,i)=>({
+        label:fp,
+        data:snaps.map(s=>{ const d=idx[s.period][fp]; return d&&d.avgScheduledCharges>0?Math.round(d.avgScheduledCharges):null; }),
+        borderColor:PALETTE[i%PALETTE.length],
+        backgroundColor:PALETTE[i%PALETTE.length]+'22',
+        tension:0.3, pointRadius:5, pointHoverRadius:7, spanGaps:true
+      })).concat([{
+        label:'Total Avg',
+        data:snaps.map(s=>{ const t=s.data?.totals; return t&&t.avgScheduledCharges>0?Math.round(t.avgScheduledCharges):null; }),
+        borderColor:'#1e293b', backgroundColor:'#1e293b22',
+        borderDash:[5,3], tension:0.3, pointRadius:5, spanGaps:true
+      }])
+    },
+    options:{...commonOpts, scales:{...commonOpts.scales, y:{...commonOpts.scales.y,
+      ticks:{...commonOpts.scales.y.ticks, callback:v=>'$'+v.toLocaleString()}}}}
+  });
+
+  // ---- Table ----
   let html=`
-  <div style="overflow-x:auto">
+  <div style="overflow-x:auto;margin-top:4px">
   <table style="border-collapse:collapse;font-size:12.5px;width:100%">
   <thead>
     <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
@@ -28228,25 +28300,22 @@ async function renderPreleaseHistory(){
       <td style="padding:8px 12px;font-weight:600;color:#374151">${fp}</td>`;
     snaps.forEach(s=>{
       const d=idx[s.period][fp];
-      const pct=d?pctFmt(d.percent):'—';
-      const rent=d?rentFmt(d.avgScheduledCharges):'—';
-      html+=`<td style="text-align:right;padding:8px 10px;border-left:1px solid #e2e8f0">${pct}</td>
-             <td style="text-align:right;padding:8px 10px;color:#2563eb">${rent}</td>`;
+      html+=`<td style="text-align:right;padding:8px 10px;border-left:1px solid #e2e8f0">${d?pctFmt(d.percent):'—'}</td>
+             <td style="text-align:right;padding:8px 10px;color:#2563eb">${d?rentFmt(d.avgScheduledCharges):'—'}</td>`;
     });
     html+=`</tr>`;
   });
 
-  // Totals row
   html+=`<tr style="border-top:2px solid #e2e8f0;font-weight:700;background:#f8fafc">
-    <td style="padding:8px 12px;color:#374151">Portfolio Total</td>`;
+    <td style="padding:8px 12px;color:#374151">Total</td>`;
   snaps.forEach(s=>{
     const t=s.data?.totals;
     html+=`<td style="text-align:right;padding:8px 10px;border-left:1px solid #e2e8f0">${t?pctFmt(t.percent):'—'}</td>
            <td style="text-align:right;padding:8px 10px;color:#2563eb">${t?rentFmt(t.avgScheduledCharges):'—'}</td>`;
   });
   html+=`</tr></tbody></table></div>
-  <div style="font-size:11px;color:#9ca3af;margin-top:8px;padding:0 2px">
-    Pre-Leased %: beds signed ÷ total rentable beds · Avg Rent: contracted rate for signed beds
+  <div style="font-size:11px;color:#9ca3af;margin-top:8px">
+    Pre-Leased %: beds signed ÷ rentable beds &nbsp;·&nbsp; Avg Rent: contracted rate for signed beds only
   </div>`;
 
   el.innerHTML=html;

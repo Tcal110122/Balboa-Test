@@ -27,7 +27,24 @@ function detectT12Format(buffer) {
   return 'standard'
 }
 
-// GET — list all underwriting deals (with optional filters)
+// Assess parse quality and return status + notes
+function assessParse(parsed) {
+  const notes = []
+  if (!parsed || parsed.error) return { status: 'failed', notes: [parsed?.error || 'Parser returned no data'] }
+
+  if (!parsed.totalIncome?.total)  notes.push('Total Income not found')
+  if (!parsed.totalOpEx?.total && !(parsed.categories?.length)) notes.push('Operating expenses not found')
+  if (!parsed.noi?.total)          notes.push('NOI not found — will be derived if Income and OpEx present')
+  if (!parsed.categories?.length)  notes.push('Expense category breakdown missing')
+  if (!parsed.potentialRent?.total && !parsed.incomeLines?.length) notes.push('Income line detail missing')
+
+  if (notes.filter(n => !n.includes('derived')).length === 0) return { status: 'ok', notes: [] }
+  // If we at least have total income and some expenses it's usable but partial
+  if (parsed.totalIncome?.total || parsed.noi?.total) return { status: 'partial', notes }
+  return { status: 'failed', notes }
+}
+
+// GET — list all underwriting deals (all authenticated users can view)
 export async function GET(request) {
   const auth = await requireAuth(request)
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -40,7 +57,7 @@ export async function GET(request) {
   const admin = adminClient()
   let q = admin
     .from('underwriting_deals')
-    .select('id, name, market, type, unit_count, data_year, t12_period, source, created_at, t12_data')
+    .select('id, name, market, type, unit_count, data_year, t12_period, parse_status, parse_notes, source, created_at, t12_data')
     .order('data_year', { ascending: false })
     .order('name')
 
@@ -77,9 +94,16 @@ export async function POST(request) {
 
     const buffer = Buffer.from(await file.arrayBuffer())
     const fmt    = detectT12Format(buffer)
-    const parsed = fmt === 'comparison' ? parseComparisonT12(buffer) : parseT12(buffer)
 
-    if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    // Try to parse — but always save regardless of result
+    let parsed = null
+    try {
+      parsed = fmt === 'comparison' ? parseComparisonT12(buffer) : parseT12(buffer)
+    } catch (parseErr) {
+      parsed = { error: parseErr.message }
+    }
+
+    const { status: parseStatus, notes: parseNotes } = assessParse(parsed)
 
     const admin = adminClient()
     const { data, error } = await admin
@@ -88,18 +112,20 @@ export async function POST(request) {
         name,
         market,
         type,
-        unit_count: unitCount,
-        data_year:  dataYear,
-        t12_period: parsed.period || null,
-        t12_data:   parsed,
-        source:     'upload',
-        created_by: auth.user.id,
+        unit_count:   unitCount,
+        data_year:    dataYear,
+        t12_period:   parsed?.period || null,
+        t12_data:     parseStatus !== 'failed' ? parsed : null,
+        parse_status: parseStatus,
+        parse_notes:  parseNotes,
+        source:       'upload',
+        created_by:   auth.user.id,
       })
-      .select('id, name, market, type, unit_count, data_year, t12_period')
+      .select('id, name, market, type, unit_count, data_year, t12_period, parse_status, parse_notes')
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true, deal: data })
+    return NextResponse.json({ ok: true, deal: data, parseStatus, parseNotes })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

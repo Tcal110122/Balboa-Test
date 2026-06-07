@@ -28862,7 +28862,19 @@ async function uwLoad(){
     return;
   }
 
-  el.innerHTML=uwBuildTable(allDeals);
+  // Show flagged summary above table if any deals need review
+  const flagged=allDeals.filter(d=>d.parse_status==='partial'||d.parse_status==='failed');
+  let flagHtml='';
+  if(flagged.length){
+    flagHtml=`<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12.5px">
+      <b style="color:#92400e">⚠ ${flagged.length} deal${flagged.length>1?'s':''} flagged for review</b>
+      <span style="color:#78350f"> — T-12 format not fully recognized. Data shown where available; missing fields shown as —.</span>
+      <ul style="margin:8px 0 0 16px;color:#78350f;line-height:1.8">
+        ${flagged.map(d=>`<li><b>${d.name}</b> (${d.parse_status}): ${(d.parse_notes||[]).join('; ')||'Unknown issue'}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
+  el.innerHTML=flagHtml+uwBuildTable(allDeals);
 }
 
 function uwBuildTable(deals){
@@ -28945,7 +28957,13 @@ function uwBuildTable(deals){
   <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
     <th style="text-align:left;padding:10px 14px;font-weight:700;color:#374151;position:sticky;left:0;background:#f8fafc;min-width:190px;z-index:1">Metric (/unit/yr)</th>`;
   deals.forEach(d=>{
-    const badge=d._isPortfolio?`<span style="font-size:9px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px">active</span>`:'';
+    const badge=d._isPortfolio
+      ?`<span style="font-size:9px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px">active</span>`
+      :d.parse_status==='failed'
+        ?`<span style="font-size:9px;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:3px;margin-left:4px">failed</span>`
+        :d.parse_status==='partial'
+          ?`<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;margin-left:4px">partial</span>`
+          :'';
     const meta=[];
     if(d.market) meta.push(d.market);
     if(d.data_year) meta.push(d.data_year);
@@ -29008,7 +29026,15 @@ async function uwSubmit(){
     const res=await fetch('/api/underwriting',{method:'POST',body:fd});
     const d=await res.json();
     if(!res.ok||d.error){status.textContent='Error: '+d.error;status.style.color='#dc2626';return;}
-    status.textContent='Saved: '+d.deal.name; status.style.color='#16a34a';
+    if(d.parseStatus==='failed'){
+      status.textContent='Saved (format not recognized — flagged for review): '+d.deal.name;
+      status.style.color='#dc2626';
+    } else if(d.parseStatus==='partial'){
+      status.textContent='Saved with warnings — '+d.parseNotes?.join('; ')+'. Check flagged deals above.';
+      status.style.color='#d97706';
+    } else {
+      status.textContent='Saved: '+d.deal.name; status.style.color='#16a34a';
+    }
     document.getElementById('uwName').value=''; document.getElementById('uwMarket').value='';
     document.getElementById('uwUnits').value=''; document.getElementById('uwFile').value='';
     _uwDeals=null; uwLoad();

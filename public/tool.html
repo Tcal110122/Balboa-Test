@@ -28888,7 +28888,7 @@ async function uwLoad(){
         if(!t||!t.data) return null;
         return{id:'portfolio-'+d.id,name:d.name+'★',market:d.market||'',type:d.type||'conventional',
           unit_count:d.unit_count,data_year:null,t12_data:t.data,_isPortfolio:true};
-      }catch(){ return null; }
+      }catch(_){ return null; }
     }));
     allDeals=[...portDeals.filter(Boolean),...allDeals];
   }
@@ -28935,7 +28935,7 @@ function uwBuildTable(deals){
   function extract(deal){
     const t=deal.t12_data||{};
     const units=deal.unit_count||1;
-    const getScalar=fig=>fig?.(fig.total??null):null;
+    const getScalar=fig=>fig?(fig.total??null):null;
     const catMap={};
     (t.categories||[]).forEach(c=>{catMap[c.acct]=c.total;catMap[c.name]=c.total;catMap[c.label]=c.total;});
     const incLines=t.incomeLines||[];

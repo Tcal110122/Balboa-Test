@@ -23921,13 +23921,11 @@ async function load(){
   const picked=DEALS.find(d=>d.id===storedId)||DEALS[0]||null;
   if(picked) DEAL_ID=picked.id;
 
-  // 3. Populate switcher UI
+  // 3. Update switcher and cover with real data now that deals are loaded
   populateDealSwitcher();
-
-  // 3b. Render cover map now that DEALS is populated
   renderCover();
 
-  // 4. Load data
+  // 4. Load deal-specific data
   if(DEAL_ID){
     await loadDealData(DEAL_ID);
     restoreLocalState(DEAL_ID);
@@ -29100,7 +29098,20 @@ async function uwDelete(id){
 }
 
 /* ============ Init ============ */
-(async function(){ await load(); renderAll(); updateHdr(); })();
+(async function(){
+  // Show the shell immediately — cover page and nav render with empty state
+  // so the user sees something right away while data loads in the background.
+  populateDealSwitcher();
+  renderCover();
+  updateHdr();
+
+  // Now load data (makes 6+ API calls per deal — this is the slow part)
+  await load();
+
+  // Re-render everything once data is available
+  renderAll();
+  updateHdr();
+})();
 </script>
 
 <!-- ============ AI Chat ============ -->

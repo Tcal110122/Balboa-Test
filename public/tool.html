@@ -238,7 +238,6 @@
   <button class="tab" data-tab="documents">Documents</button>
   <button class="tab" data-tab="queries">Queries</button>
   <button class="tab" data-tab="portcomp">Portfolio Comparison</button>
-  <button class="tab" data-tab="underwriting">Underwriting</button>
 </div>
 
 <div class="wrap">
@@ -248,6 +247,7 @@
     <div style="padding:20px 0 16px;display:flex;align-items:baseline;gap:12px">
       <h2 style="font-size:16px;font-weight:700">Portfolio Overview</h2>
       <span class="muted" style="font-size:12.5px">Click a property to open its dashboard</span>
+      <button onclick="uwToggle()" id="uwToggleBtn" style="margin-left:auto;padding:6px 16px;background:#1e293b;color:#fff;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Underwriting DB</button>
     </div>
     <div id="coverMap" style="height:460px;width:100%;border-radius:10px;border:1px solid var(--line);overflow:hidden"></div>
     <div id="coverCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:18px"></div>
@@ -596,8 +596,8 @@
     <div id="portcompContent" style="overflow-x:auto"></div>
   </div>
 
-  <!-- UNDERWRITING -->
-  <div class="panel" id="panel-underwriting">
+  <!-- UNDERWRITING (standalone overlay, not a tab panel) -->
+  <div id="panel-underwriting" style="display:none;padding:0 0 40px">
     <div style="padding:20px 0 14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <h2 style="font-size:16px;font-weight:700;margin:0">Underwriting Deal Database</h2>
       <button id="uwAddBtn" onclick="uwShowAddForm()" style="padding:6px 16px;background:#1e293b;color:#fff;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">+ Add Deal</button>
@@ -27616,8 +27616,9 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='documents') renderDocuments();
     if(t.dataset.tab==='preleasing'){ renderPreleasing(); _plHistory=null; renderPreleaseHistory(); }
     if(t.dataset.tab==='queries') renderQueries();
-    if(t.dataset.tab==='portcomp'){ _pcData=null; renderPortfolioComparison(); }
-    if(t.dataset.tab==='underwriting') uwLoad();
+    if(t.dataset.tab==='portcomp') renderPortfolioComparison();
+    // Hide underwriting overlay when switching tabs
+    if(t.dataset.tab!=='cover') uwHideOverlay();
     if(t.dataset.tab==='cover'){ renderCover(); setTimeout(()=>{ if(coverMap) coverMap.invalidateSize(); },200); }
   });
 });
@@ -28805,6 +28806,35 @@ async function renderPortfolioComparison(){
 
 /* ============ Underwriting ============ */
 let _uwDeals=null;
+
+let _uwVisible=false;
+function uwToggle(){
+  _uwVisible=!_uwVisible;
+  const panel=document.getElementById('panel-underwriting');
+  const coverMap=document.getElementById('coverMap');
+  const coverCards=document.getElementById('coverCards');
+  const btn=document.getElementById('uwToggleBtn');
+  if(_uwVisible){
+    if(panel) panel.style.display='';
+    if(coverMap) coverMap.style.display='none';
+    if(coverCards) coverCards.style.display='none';
+    if(btn) btn.textContent='← Portfolio Overview';
+    _uwDeals=null; uwLoad();
+  } else {
+    uwHideOverlay();
+  }
+}
+function uwHideOverlay(){
+  _uwVisible=false;
+  const panel=document.getElementById('panel-underwriting');
+  const coverMap=document.getElementById('coverMap');
+  const coverCards=document.getElementById('coverCards');
+  const btn=document.getElementById('uwToggleBtn');
+  if(panel) panel.style.display='none';
+  if(coverMap) coverMap.style.display='';
+  if(coverCards) coverCards.style.display='';
+  if(btn) btn.textContent='Underwriting DB';
+}
 
 async function uwBatchImport(input){
   const file=input.files[0]; if(!file) return;

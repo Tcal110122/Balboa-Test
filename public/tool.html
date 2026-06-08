@@ -27616,7 +27616,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     if(t.dataset.tab==='queries') renderQueries();
     if(t.dataset.tab==='portcomp') renderPortfolioComparison();
     // Hide underwriting overlay when switching tabs
-    if(t.dataset.tab!=='cover') uwHideOverlay();
+    if(t.dataset.tab!=='cover' && _uwVisible) uwHideOverlay();
     if(t.dataset.tab==='cover'){ renderCover(); setTimeout(()=>{ if(coverMap) coverMap.invalidateSize(); },200); }
   });
 });
@@ -29098,20 +29098,7 @@ async function uwDelete(id){
 }
 
 /* ============ Init ============ */
-(async function(){
-  // Show the shell immediately — cover page and nav render with empty state
-  // so the user sees something right away while data loads in the background.
-  populateDealSwitcher();
-  renderCover();
-  updateHdr();
-
-  // Now load data (makes 6+ API calls per deal — this is the slow part)
-  await load();
-
-  // Re-render everything once data is available
-  renderAll();
-  updateHdr();
-})();
+(async function(){ await load(); renderAll(); updateHdr(); })();
 </script>
 
 <!-- ============ AI Chat ============ -->

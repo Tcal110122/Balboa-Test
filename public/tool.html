@@ -431,10 +431,29 @@
   <!-- FLOORPLAN PRICING -->
   <div class="panel" id="panel-floorplans">
     <div id="fpEmpty" class="card"><div class="empty">Load a rent roll to see floorplan-level pricing.</div></div>
-    <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
+    <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <button class="btn subtle" id="fpMappingBtn">Upload Floor Plan Names</button>
       <input type="file" id="fpMappingFile" accept=".xlsx,.xls" style="display:none">
+      <button class="btn subtle" onclick="fpTierOverrideShow()">Set Tier Override</button>
       <span id="fpMappingReport" style="font-size:12px;color:var(--ink-faint)"></span>
+    </div>
+    <!-- Tier override inline form -->
+    <div id="fpTierOverrideForm" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin-bottom:12px;display:none">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">Override Tier for a Floorplan</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <select id="fpTierFp" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:140px">
+          <option value="">Select floorplan…</option>
+        </select>
+        <select id="fpTierVal" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+          <option value="Small (<=610 SF)">Small (≤610 SF)</option>
+          <option value="1 Bedroom">1 Bedroom</option>
+          <option value="2 Bedroom">2 Bedroom</option>
+          <option value="Large 2BR / 3BR">Large 2BR / 3BR</option>
+        </select>
+        <button onclick="fpTierOverrideApply()" style="padding:6px 16px;background:#1e293b;color:#fff;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Apply</button>
+        <button onclick="document.getElementById('fpTierOverrideForm').style.display='none'" style="padding:6px 12px;background:transparent;color:#6b7280;border:1px solid #d1d5db;border-radius:6px;font-size:12.5px;cursor:pointer">Cancel</button>
+        <span id="fpTierOverrideMsg" style="font-size:12px;color:#6b7280"></span>
+      </div>
     </div>
     <div id="fpContent" style="display:none">
       <div class="hint">
@@ -25341,6 +25360,43 @@ function handleT12File(file){
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function fpTierOverrideShow(){
+  const form=document.getElementById('fpTierOverrideForm');
+  form.style.display=form.style.display==='none'||!form.style.display?'':'none';
+  if(form.style.display==='') return;
+  // Populate floorplan dropdown from current units
+  const fps=[...new Set(state.units.map(u=>u.utype).filter(Boolean))].sort();
+  const sel=document.getElementById('fpTierFp');
+  sel.innerHTML='<option value="">Select floorplan…</option>'+fps.map(fp=>{
+    const cur=(state.fpNames._tiers||{})[fp];
+    return `<option value="${fp}"${cur?' (currently: '+cur+')':''}>${fp}${cur?' → '+cur:''}</option>`;
+  }).join('');
+  document.getElementById('fpTierOverrideMsg').textContent='';
+}
+
+function fpTierOverrideApply(){
+  const fp=document.getElementById('fpTierFp').value;
+  const tier=document.getElementById('fpTierVal').value;
+  const msg=document.getElementById('fpTierOverrideMsg');
+  if(!fp){msg.textContent='Select a floorplan first';msg.style.color='#dc2626';return;}
+  if(!state.fpNames._tiers) state.fpNames._tiers={};
+  state.fpNames._tiers[fp]=tier;
+  applyTierOverrides();
+  save();
+  renderFloorplans(); renderDashboard(); renderRanking();
+  msg.textContent=`✓ ${fp} → ${tier}`; msg.style.color='#16a34a';
+  // Persist to server if connected
+  if(DEAL_ID){
+    const fd=new FormData();
+    // Build a minimal mapping object and send to fp-mapping endpoint
+    const mapping={};
+    Object.keys(state.fpNames).forEach(k=>{if(k!=='_tiers') mapping[k]=state.fpNames[k];});
+    mapping._tiers=state.fpNames._tiers;
+    fetch('/api/fp-mapping',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({deal_id:DEAL_ID,data:mapping})}).catch(()=>{});
+  }
 }
 
 function handleFpMappingFile(file){

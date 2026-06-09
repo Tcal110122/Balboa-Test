@@ -24568,24 +24568,25 @@ function parseT12(wb){
     return{label,name:label,acct,row:-1,vals,total:vals.reduce((s,v)=>v!=null?s+v:s,0)};
   };
   const maintRe=[
-    /^(total )?(general maintenance|repairs?\s*&\s*maint(enance)?|maintenance(\s*&?\s*repair)?)\s*$/i,
-    /^(total )?painting(\s*(&|and)\s*decorat(ing)?)?\s*$/i,
-    /^(total )?contracted?\s*services?\s*$/i,
-    /^(total )?contract\s*services?\s*$/i,
+    /^(total )?(general maintenance|repairs?\s*&\s*maint(enance)?|maintenance(\s*&?\s*repair)?|property\s+repairs?\s*&\s*maint(enance)?)\s*$/i,
+    /^(total )?(painting(\s*(&|and)\s*decorat(ing)?)?|redecorat\w*(\s*[\/&]?\s*make.?ready)?|make.?ready)\s*$/i,
+    /^(total )?(contracted?\s*services?|contract\s*services?|landscape\s*(and|&)?\s*contract\s*services?)\s*$/i,
+    /^(total )?(landscape(\s*(maintenance|contract|services?|and\s+contract\s*services?))?)\s*$/i,
   ];
   // ---- expense categories: [account code, display name, label-regex fallback] ----
   const expenseCats=[
     ['51599-099','Payroll & Benefits',       /^(total )?(payroll(\s*&\s*benefits|\s+expense)?|salaries(\s+expense)?)\s*$/i],
-    ['54999-099','Advertising / Marketing',  /^(total\s+)?(advertising(\s*([\/&]|and)\s*(promotion|marketing))?\s+expenses?|marketing\s+expenses?|total\s+(advertising(\s*([\/&]|and)\s*(promotion|marketing))?|marketing))(\s+expenses?)?\s*$/i],
+    ['54999-099','Advertising / Marketing',  /^(total\s+)?(advertising(\s*([\/&]|and)\s*(promot\w*|marketing))?\s+expenses?|marketing\s+expenses?|total\s+(advertising(\s*([\/&]|and)\s*(promot\w*|marketing))?|marketing))(\s+expenses?)?\s*$/i],
     ['58399-099','General & Administrative', /^(total )?(general(\s*&\s*|\s+)admin(istrative)?|administrative(\s+expense)?)\s*$/i],
     ['59999-099','Utilities',                /^(total )?utilities\s*$/i],
     ['61999-099','Management Fees',          /^(total )?management fees?\s*$/i],
-    ['62999-099','Taxes',                    /^(total )?(real estate tax(es?)?|property tax(es?)?|tax(es?)?(\s+expense)?)\s*$/i],
+    ['62999-099','Taxes',                    /^(total )?(real\s+(estate|property)\s+tax(es?)?|property\s+tax(es?)?|tax(es?)?(\s+expense)?|fixed\s+expenses?)\s*$/i],
   ];
   const insurRe=[
     /^(total )?insurance(\s+expense)?\s*$/i,
     /^(property\s*(&|and)\s*liability\s*)?insurance\s*$/i,
     /^flood\s*insurance\s*$/i,
+    /^property\s+insurance\s*$/i,
   ];
   const maint=figMany('53999-099','General Maintenance',maintRe);
   const insur=figMany('63999-099','Insurance',insurRe);
@@ -24676,10 +24677,12 @@ function parseT12(wb){
   belowNOI.forEach(c=>{ c.items=detailFor(c.row); });
 
   // income detail
-  const ilPotRent=fig('41029-099','Potential Rent',/^total gpa\s*$/i)||fig('41029-099','Potential Rent',/^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent)\s*$/i);
-  const ilOtherRentalRe=[/^less:?\s*concessions?/i,/^less:?\s*vacancy/i,/^less:?\s*write.?offs?/i,/^less:?\s*employee rent concession/i,/^(total )?(other rental (income|inc\.?)|rental losses?)\s*$/i,/^vacancies\s*(&|and)\s*concessions?\s*$/i];
-  const ilOtherRent=figMany('41999-098','Total Other Rental Inc.',ilOtherRentalRe);
-  let ilOtherInc=figSubtotal('43599-099','Total Other Income',/^(total )?other income\s*$/i);
+  const ilPotRent=fig('41029-099','Potential Rent',/^total gpa\s*$/i)||fig('41029-099','Potential Rent',/^(potential( gross)? rent|gross potential( rent)?|gross possible( rent)?|scheduled rent|total possible rent|total net rent|net potential rent)\s*$/i);
+  // Prefer explicit subtotal for other rental inc; only sum individual Less: rows as fallback
+  const otherRentSubRe=/^total\s+(other\s+rental\s+(income|inc\.?)|rental\s+(losses?|income|adjustments?))\s*$/i;
+  let ilOtherRent=fig('41999-098','Total Other Rental Inc.',otherRentSubRe);
+  if(!ilOtherRent){const ilOtherRentalRe=[/^less:?\s*concessions?/i,/^less:?\s*vacancy(\s+loss(es?)?)?/i,/^less:?\s*write.?offs?/i,/^less:?\s*employee(\s+rent)?\s+concession/i,/^(total )?(other rental (income|inc\.?)|rental losses?)\s*$/i,/^vacancies\s*(&|and)\s*concessions?\s*$/i];ilOtherRent=figMany('41999-098','Total Other Rental Inc.',ilOtherRentalRe);}
+  let ilOtherInc=figSubtotal('43599-099','Total Other Income',/^total\s+other\s+income\s*$/i)||figSubtotal('43599-099','Total Other Income',/^(total )?other income\s*$/i);
   if(!ilOtherInc&&totalIncome&&(ilPotRent||potentialRent)&&ilOtherRent){
     const pr=ilPotRent||potentialRent;
     const vals=totalIncome.vals.map((v,i)=>v!=null?v-(pr.vals[i]||0)-(ilOtherRent.vals[i]||0):null);

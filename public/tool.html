@@ -448,7 +448,8 @@
           <option value="Small (<=610 SF)">Small (≤610 SF)</option>
           <option value="1 Bedroom">1 Bedroom</option>
           <option value="2 Bedroom">2 Bedroom</option>
-          <option value="Large 2BR / 3BR">Large 2BR / 3BR</option>
+          <option value="3 Bedroom">3 Bedroom</option>
+          <option value="Large 2BR / 3BR">Large 2BR / 3BR (4BR+)</option>
         </select>
         <button onclick="fpTierOverrideApply()" style="padding:6px 16px;background:#1e293b;color:#fff;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Apply</button>
         <button onclick="document.getElementById('fpTierOverrideForm').style.display='none'" style="padding:6px 12px;background:transparent;color:#6b7280;border:1px solid #d1d5db;border-radius:6px;font-size:12.5px;cursor:pointer">Cancel</button>
@@ -971,7 +972,7 @@ const FEE_CODES = new Set(['internet','trashrb','liabins','carport','utilreim','
   'trash-pu','petrent','pestrb','empdisc','patrol','pestctrl',
   'garagmsc','vtrash','amenity','pest','resins','rubs','pkg','storage',
   'concession','conc','leaseup','specl','disc']);
-const TIERS = ['Small (<=610 SF)','1 Bedroom','2 Bedroom','Large 2BR / 3BR','Unknown'];
+const TIERS = ['Small (<=610 SF)','1 Bedroom','2 Bedroom','3 Bedroom','Large 2BR / 3BR','Unknown'];
 function tierOf(sf){
   if(sf==null||isNaN(sf)) return 'Unknown';
   if(sf<=610) return 'Small (<=610 SF)';
@@ -979,7 +980,7 @@ function tierOf(sf){
   if(sf<=1310) return '2 Bedroom';
   return 'Large 2BR / 3BR';
 }
-const TIER_ALIASES={'studio':'Small (<=610 SF)','small':'Small (<=610 SF)','1br':'1 Bedroom','1bed':'1 Bedroom','2br':'2 Bedroom','2bed':'2 Bedroom','3br':'Large 2BR / 3BR','3bed':'Large 2BR / 3BR','large':'Large 2BR / 3BR'};
+const TIER_ALIASES={'studio':'Small (<=610 SF)','small':'Small (<=610 SF)','1br':'1 Bedroom','1bed':'1 Bedroom','2br':'2 Bedroom','2bed':'2 Bedroom','3br':'3 Bedroom','3bed':'3 Bedroom','threebedroom':'3 Bedroom','large':'Large 2BR / 3BR','4br':'Large 2BR / 3BR','4bed':'Large 2BR / 3BR'};
 function tierOfUnit(utype,sf){
   const ov=(state.fpNames._tiers||{})[utype];
   if(ov){const k=TIER_ALIASES[ov.toLowerCase().replace(/\s+/g,'')];if(k) return k;if(Object.values(TIER_ALIASES).includes(ov)) return ov;}

@@ -651,6 +651,34 @@
       </div>
     </div>
 
+    <!-- Edit deal form -->
+    <div id="uwEditForm" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:20px;margin-bottom:16px">
+      <h3 style="margin:0 0 14px;font-size:14px;font-weight:700">Edit Deal</h3>
+      <input type="hidden" id="uwEditId">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+        <div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Deal Name *</label>
+          <input id="uwEditName" type="text" style="width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"></div>
+        <div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Market / City</label>
+          <input id="uwEditMarket" type="text" style="width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"></div>
+        <div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Property Type</label>
+          <select id="uwEditType" style="width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="conventional">Multifamily</option>
+            <option value="student">Student</option>
+          </select></div>
+        <div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Units / Beds</label>
+          <input id="uwEditUnits" type="number" style="width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"></div>
+        <div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Data Year</label>
+          <input id="uwEditYear" type="number" style="width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"></div>
+        <div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">New T-12 File <span style="font-weight:400;color:#9ca3af">(optional)</span></label>
+          <input id="uwEditFile" type="file" accept=".xlsx,.xls" style="font-size:12px;padding:6px 0"></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button onclick="uwEditSubmit()" style="padding:8px 20px;background:#0369a1;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Save Changes</button>
+        <button onclick="uwEditClose()" style="padding:8px 16px;background:transparent;color:#6b7280;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer">Cancel</button>
+        <span id="uwEditStatus" style="font-size:12.5px;color:#6b7280"></span>
+      </div>
+    </div>
+
     <div id="uwContent"><div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px">Loading…</div></div>
   </div>
 
@@ -28854,8 +28882,49 @@ async function uwBatchImport(input){
   }catch(e){ status.textContent='Error: '+e.message; status.style.color='#dc2626'; }
 }
 
-function uwShowAddForm(){ document.getElementById('uwAddForm').style.display=''; }
+function uwShowAddForm(){ document.getElementById('uwAddForm').style.display=''; document.getElementById('uwEditForm').style.display='none'; }
 function uwHideAddForm(){ document.getElementById('uwAddForm').style.display='none'; }
+
+function uwEditOpen(id,name,market,type,units,year){
+  document.getElementById('uwAddForm').style.display='none';
+  const f=document.getElementById('uwEditForm');
+  f.style.display='';
+  document.getElementById('uwEditId').value=id;
+  document.getElementById('uwEditName').value=name;
+  document.getElementById('uwEditMarket').value=market;
+  document.getElementById('uwEditType').value=type;
+  document.getElementById('uwEditUnits').value=units;
+  document.getElementById('uwEditYear').value=year;
+  document.getElementById('uwEditStatus').textContent='';
+  f.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function uwEditClose(){ document.getElementById('uwEditForm').style.display='none'; }
+
+async function uwEditSubmit(){
+  const id=document.getElementById('uwEditId').value;
+  const name=document.getElementById('uwEditName').value.trim();
+  const status=document.getElementById('uwEditStatus');
+  if(!name){status.textContent='Name required';status.style.color='#dc2626';return;}
+  status.textContent='Saving…';status.style.color='#6b7280';
+  const fd=new FormData();
+  fd.append('name',name);
+  fd.append('market',document.getElementById('uwEditMarket').value.trim());
+  fd.append('type',document.getElementById('uwEditType').value);
+  fd.append('unit_count',document.getElementById('uwEditUnits').value);
+  fd.append('data_year',document.getElementById('uwEditYear').value);
+  const file=document.getElementById('uwEditFile').files[0];
+  if(file) fd.append('file',file);
+  try{
+    const res=await fetch('/api/underwriting?id='+id,{method:'PATCH',body:fd});
+    const d=await res.json();
+    if(!res.ok||d.error){status.textContent='Error: '+d.error;status.style.color='#dc2626';return;}
+    if(d.parseStatus==='failed'){status.textContent='Saved — T-12 format not recognized';status.style.color='#dc2626';}
+    else if(d.parseStatus==='partial'){status.textContent='Saved with warnings: '+d.parseNotes?.join('; ');status.style.color='#d97706';}
+    else{status.textContent='Updated ✓';status.style.color='#16a34a';}
+    document.getElementById('uwEditFile').value='';
+    _uwDeals=null; uwLoad();
+  }catch(e){status.textContent='Error: '+e.message;status.style.color='#dc2626';}
+}
 
 async function uwLoad(){
   const el=document.getElementById('uwContent');
@@ -29021,8 +29090,9 @@ function uwBuildTable(deals){
     if(d.market) meta.push(d.market);
     if(d.data_year) meta.push(d.data_year);
     if(d.unit_count) meta.push(d.unit_count+' units');
+    const editBtn=!d._isPortfolio?`<button onclick="uwEditOpen('${d.id}','${(d.name||'').replace(/'/g,"\\'")}','${(d.market||'').replace(/'/g,"\\'")}','${d.type||'conventional'}','${d.unit_count||''}','${d.data_year||''}')" title="Edit / re-upload" style="margin-left:4px;background:none;border:none;cursor:pointer;color:#9ca3af;font-size:11px">✎</button><button onclick="uwDelete('${d.id}')" title="Remove" style="margin-left:2px;background:none;border:none;cursor:pointer;color:#d1d5db;font-size:11px">✕</button>`:'';
     html+=`<th style="text-align:right;padding:10px 12px;font-weight:700;color:#374151;white-space:nowrap;min-width:120px">
-      ${d.name}${badge}${!d._isPortfolio?`<button onclick="uwDelete('${d.id}')" title="Remove" style="margin-left:6px;background:none;border:none;cursor:pointer;color:#d1d5db;font-size:11px">✕</button>`:''}
+      ${d.name}${badge}${editBtn}
       <br><span style="font-weight:400;color:#9ca3af;font-size:10px">${meta.join(' · ')}</span></th>`;
   });
   html+=`<th style="text-align:right;padding:10px 12px;font-weight:700;color:#374151;background:#f1f5f9;border-left:2px solid #e2e8f0">Comp Avg</th></tr></thead><tbody>`;

@@ -133,6 +133,62 @@ export async function POST(request) {
   }
 }
 
+// PATCH — update an existing deal (metadata and/or new T-12 file)
+export async function PATCH(request) {
+  const auth = await requireAuth(request)
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const isStaff = auth.isAllDeals ||
+    (auth.user.email || '').toLowerCase().endsWith('@thebalboagroup.com')
+  if (!isStaff) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const { searchParams } = new URL(request.url)
+  const id = searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  try {
+    const formData = await request.formData()
+    const name      = formData.get('name')
+    const market    = formData.get('market') || ''
+    const type      = formData.get('type')  || 'conventional'
+    const unitCount = parseInt(formData.get('unit_count') || '0') || null
+    const dataYear  = parseInt(formData.get('data_year')  || '0') || null
+    const file      = formData.get('file')  // optional
+
+    const updates = { name, market, type, unit_count: unitCount, data_year: dataYear }
+
+    // Re-parse T-12 if a new file was supplied
+    if (file && file.size > 0) {
+      const buffer = Buffer.from(await file.arrayBuffer())
+      const fmt    = detectT12Format(buffer)
+      let parsed = null
+      try {
+        parsed = fmt === 'comparison' ? parseComparisonT12(buffer) : parseT12(buffer)
+      } catch (e) { parsed = { error: e.message } }
+
+      const { status: parseStatus, notes: parseNotes } = assessParse(parsed)
+      updates.t12_data    = parseStatus !== 'failed' ? parsed : null
+      updates.t12_period  = parsed?.period || null
+      updates.parse_status = parseStatus
+      updates.parse_notes  = parseNotes
+    }
+
+    const admin = adminClient()
+    const { data, error } = await admin
+      .from('underwriting_deals')
+      .update(updates)
+      .eq('id', id)
+      .select('id, name, market, type, unit_count, data_year, t12_period, parse_status, parse_notes')
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const ps = updates.parse_status
+    return NextResponse.json({ ok: true, deal: data, parseStatus: ps, parseNotes: updates.parse_notes })
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
 // DELETE — remove a deal
 export async function DELETE(request) {
   const auth = await requireAuth(request)

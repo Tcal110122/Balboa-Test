@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root {
     --ink:#1a1d21; --ink-soft:#4a4f57; --ink-faint:#8b9099;
@@ -238,6 +239,7 @@
   <button class="tab" data-tab="documents">Documents</button>
   <button class="tab" data-tab="queries">Queries</button>
   <button class="tab" data-tab="portcomp">Portfolio Comparison</button>
+  <button class="tab" data-tab="visibility">Visibility</button>
 </div>
 
 <div class="wrap">
@@ -614,6 +616,98 @@
       <span class="muted" id="pcSubtitle" style="font-size:12px">T-12 actuals · per unit</span>
     </div>
     <div id="portcompContent" style="overflow-x:auto"></div>
+  </div>
+
+  <!-- VISIBILITY -->
+  <div class="panel" id="panel-visibility">
+    <div style="padding:20px 0 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div>
+        <h2 style="font-size:16px;font-weight:700;margin:0 0 2px">Visibility</h2>
+        <div class="sub" style="margin:0">Search Console · Keyword Rankings · Core Web Vitals</div>
+      </div>
+      <div class="grow"></div>
+      <label class="fld">
+        <span>Property</span>
+        <select id="visPropSelect" onchange="_vis.onPropChange(this.value)" style="min-width:220px"></select>
+      </label>
+      <button class="btn ghost" id="visSyncBtn" onclick="_vis.triggerSync()">Sync Now</button>
+    </div>
+
+    <!-- Status / last updated -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span id="visStatus" style="font-size:12px;color:var(--ink-faint)"></span>
+      <span id="visLastUpdated" style="font-size:11.5px;color:var(--ink-faint)"></span>
+    </div>
+
+    <!-- Stat tiles -->
+    <div class="tiles" style="grid-template-columns:repeat(4,1fr)">
+      <div class="tile">
+        <div class="k">Impressions</div>
+        <div class="v" id="visTileImpressions">—</div>
+        <div class="x" id="visTileDate"></div>
+      </div>
+      <div class="tile">
+        <div class="k">Clicks</div>
+        <div class="v" id="visTileClicks">—</div>
+      </div>
+      <div class="tile">
+        <div class="k">Avg. Position</div>
+        <div class="v" id="visTilePosition">—</div>
+        <div class="x">lower is better</div>
+      </div>
+      <div class="tile">
+        <div class="k">Click-Through Rate</div>
+        <div class="v" id="visTileCtr">—</div>
+      </div>
+    </div>
+
+    <!-- Core Web Vitals -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-hd">
+        <h2>Core Web Vitals</h2>
+        <span class="note">PageSpeed Insights · weekly</span>
+      </div>
+      <div class="card-bd" style="padding:4px 0">
+        <div class="perf-strip" id="visCwvStrip" style="padding:6px 14px"></div>
+      </div>
+    </div>
+
+    <!-- 30-day trend chart -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-hd">
+        <h2>30-Day Trend</h2>
+        <span class="note">Impressions &amp; clicks from Search Console</span>
+      </div>
+      <div class="card-bd" style="padding:16px 18px">
+        <div style="position:relative;height:220px">
+          <canvas id="visTrendCanvas"></canvas>
+        </div>
+        <div id="visTrendEmpty" class="empty" style="display:none">No trend data yet</div>
+      </div>
+    </div>
+
+    <!-- Top pages -->
+    <div class="card">
+      <div class="card-hd">
+        <h2>Top Pages</h2>
+        <span class="note">By impressions · latest snapshot</span>
+      </div>
+      <div class="card-bd">
+        <table>
+          <thead>
+            <tr>
+              <th class="l">Page</th>
+              <th>Impressions</th>
+              <th>Clicks</th>
+              <th>Avg. Position</th>
+            </tr>
+          </thead>
+          <tbody id="visTopPagesBody">
+            <tr><td colspan="4" class="empty">Select a property to load data</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- UNDERWRITING (standalone overlay, not a tab panel) -->
@@ -29404,6 +29498,270 @@ async function uwDelete(id){
       sendBtn.disabled=false; streaming=false; input.focus();
     }
   }
+})();
+</script>
+
+<!-- ============================================================
+     VISIBILITY TAB — Phase 1: SEO
+     ============================================================ -->
+<script>
+(function(){
+  'use strict';
+
+  const SUPABASE_URL = 'https://srxxgfgdckdeucyuhgrt.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyeHhnZmdkY2tkZXVjeXVoZ3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNTQ1OTEsImV4cCI6MjA5NDczMDU5MX0.Ap08AcjsqjpeEu0vl6WQkd49QUzN804m4J7-qqR7s7g';
+  // Edge Function URL for manual sync
+  const SYNC_FUNCTION_URL = SUPABASE_URL + '/functions/v1/ingest-seo-snapshot';
+
+  let sbClient = null;
+  function getSB() {
+    if (!sbClient) sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    return sbClient;
+  }
+
+  // ---- State ----
+  let visProperties = [];
+  let visSelectedId = null;
+  let visTrendChart = null;
+
+  // ---- Init ----
+  document.addEventListener('DOMContentLoaded', function() {
+    // Hook into tab switching
+    document.querySelectorAll('.tab[data-tab="visibility"]').forEach(function(btn) {
+      btn.addEventListener('click', onVisibilityTabOpen);
+    });
+  });
+
+  function onVisibilityTabOpen() {
+    if (visProperties.length === 0) loadProperties();
+  }
+
+  // ---- Data loading ----
+  async function loadProperties() {
+    setVisStatus('Loading properties…');
+    const { data, error } = await getSB()
+      .from('properties')
+      .select('id, slug, display_name, city, state, gsc_site_url')
+      .order('display_name');
+
+    if (error) { setVisStatus('Error loading properties: ' + error.message, true); return; }
+    if (!data || data.length === 0) {
+      setVisStatus('No properties found. Add a property in Supabase to get started.');
+      return;
+    }
+
+    visProperties = data;
+    renderPropertySelector();
+    visSelectedId = data[0].id;
+    document.getElementById('visPropSelect').value = visSelectedId;
+    loadSeoData();
+  }
+
+  function renderPropertySelector() {
+    const sel = document.getElementById('visPropSelect');
+    sel.innerHTML = '';
+    visProperties.forEach(function(p) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.display_name + ' (' + p.city + ', ' + p.state + ')';
+      if (!p.gsc_site_url) opt.textContent += ' — no GSC URL';
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadSeoData() {
+    if (!visSelectedId) return;
+    setVisStatus('Loading SEO data…');
+    clearVisCards();
+
+    // Latest snapshot
+    const { data: latest, error: e1 } = await getSB()
+      .from('v_seo_latest')
+      .select('*')
+      .eq('property_id', visSelectedId)
+      .maybeSingle();
+
+    if (e1) { setVisStatus('Error: ' + e1.message, true); return; }
+
+    // 30-day trend
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const { data: trend } = await getSB()
+      .from('seo_snapshots')
+      .select('captured_at, impressions, clicks, avg_position, ctr')
+      .eq('property_id', visSelectedId)
+      .gte('captured_at', thirtyDaysAgo.toISOString().split('T')[0])
+      .order('captured_at');
+
+    setVisStatus('');
+    renderSeoCards(latest);
+    renderTopPages(latest);
+    renderCoreWebVitals(latest);
+    renderTrendChart(trend || []);
+
+    if (latest) {
+      document.getElementById('visLastUpdated').textContent =
+        'Last sync: ' + formatDate(latest.captured_at);
+    } else {
+      document.getElementById('visLastUpdated').textContent =
+        'No data yet — run a sync or wait for the daily job.';
+    }
+  }
+
+  // ---- Render helpers ----
+  function renderSeoCards(d) {
+    if (!d) return;
+    document.getElementById('visTileImpressions').textContent = fmtNum(d.impressions);
+    document.getElementById('visTileClicks').textContent = fmtNum(d.clicks);
+    document.getElementById('visTilePosition').textContent = d.avg_position != null ? d.avg_position.toFixed(1) : '—';
+    document.getElementById('visTileCtr').textContent = d.ctr != null ? (d.ctr * 100).toFixed(2) + '%' : '—';
+    document.getElementById('visTileDate').textContent = d.captured_at ? formatDate(d.captured_at) : '';
+  }
+
+  function renderTopPages(d) {
+    const tbody = document.getElementById('visTopPagesBody');
+    tbody.innerHTML = '';
+    if (!d || !d.top_pages || !d.top_pages.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">No page data</td></tr>';
+      return;
+    }
+    const pages = Array.isArray(d.top_pages) ? d.top_pages : [];
+    const maxImp = Math.max(...pages.map(function(p) { return p.impressions || 0; }), 1);
+    pages.forEach(function(p) {
+      const pct = Math.round((p.impressions / maxImp) * 100);
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="l" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">' +
+          '<span title="' + escHtml(p.page) + '">' + escHtml(p.page) + '</span></td>' +
+        '<td><div class="barwrap"><div class="bar"><div style="width:' + pct + '%;background:var(--accent)"></div></div>' +
+          '<span>' + fmtNum(p.impressions) + '</span></div></td>' +
+        '<td>' + fmtNum(p.clicks) + '</td>' +
+        '<td>' + (p.position != null ? p.position.toFixed(1) : '—') + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderCoreWebVitals(d) {
+    const strip = document.getElementById('visCwvStrip');
+    if (!d || d.mobile_score == null) {
+      strip.innerHTML = '<span style="color:var(--ink-faint);font-size:12px">Core Web Vitals not yet collected (runs weekly)</span>';
+      return;
+    }
+    strip.innerHTML =
+      stat('Mobile Score', d.mobile_score, scoreColor(d.mobile_score)) +
+      stat('Desktop Score', d.desktop_score, scoreColor(d.desktop_score)) +
+      stat('LCP', d.lcp_ms != null ? (d.lcp_ms / 1000).toFixed(2) + 's' : '—', lcpColor(d.lcp_ms)) +
+      stat('CLS', d.cls_score != null ? d.cls_score.toFixed(3) : '—', clsColor(d.cls_score));
+
+    function stat(k, v, color) {
+      return '<div class="perf-stat">' +
+        '<div class="pk">' + k + '</div>' +
+        '<div class="pv" style="color:' + color + '">' + v + '</div>' +
+      '</div>';
+    }
+    function scoreColor(v) { return v >= 90 ? 'var(--pos)' : v >= 50 ? 'var(--gold)' : 'var(--neg)'; }
+    function lcpColor(v) { return !v ? '#888' : v <= 2500 ? 'var(--pos)' : v <= 4000 ? 'var(--gold)' : 'var(--neg)'; }
+    function clsColor(v) { return v == null ? '#888' : v <= 0.1 ? 'var(--pos)' : v <= 0.25 ? 'var(--gold)' : 'var(--neg)'; }
+  }
+
+  function renderTrendChart(rows) {
+    const canvas = document.getElementById('visTrendCanvas');
+    if (visTrendChart) { visTrendChart.destroy(); visTrendChart = null; }
+    if (!rows.length) {
+      canvas.style.display = 'none';
+      document.getElementById('visTrendEmpty').style.display = 'block';
+      return;
+    }
+    canvas.style.display = 'block';
+    document.getElementById('visTrendEmpty').style.display = 'none';
+
+    const labels = rows.map(function(r) { return r.captured_at; });
+    const impressions = rows.map(function(r) { return r.impressions || 0; });
+    const clicks = rows.map(function(r) { return r.clicks || 0; });
+
+    visTrendChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Impressions', data: impressions, backgroundColor: 'rgba(31,92,77,.18)',
+            borderColor: 'rgba(31,92,77,.6)', borderWidth: 1, yAxisID: 'yImp' },
+          { label: 'Clicks', data: clicks, type: 'line', borderColor: '#1f5c4d',
+            backgroundColor: 'transparent', pointRadius: 3, borderWidth: 2, yAxisID: 'yClk' },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 10, font: { size: 11 } } },
+          yImp: { position: 'left', title: { display: true, text: 'Impressions', font: { size: 11 } } },
+          yClk: { position: 'right', grid: { drawOnChartArea: false },
+            title: { display: true, text: 'Clicks', font: { size: 11 } } },
+        }
+      }
+    });
+  }
+
+  // ---- Manual sync ----
+  async function triggerSync() {
+    const btn = document.getElementById('visSyncBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+    setVisStatus('Requesting sync from Google Search Console…');
+    try {
+      const resp = await fetch(SYNC_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        },
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        setVisStatus('Sync failed: ' + (data.error || JSON.stringify(data)), true);
+      } else {
+        setVisStatus('Sync complete for ' + (data.date || 'yesterday') + '. Reloading data…');
+        setTimeout(loadSeoData, 1500);
+      }
+    } catch(err) {
+      setVisStatus('Sync error: ' + err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sync Now';
+    }
+  }
+
+  // ---- Utilities ----
+  function setVisStatus(msg, isError) {
+    const el = document.getElementById('visStatus');
+    el.textContent = msg;
+    el.style.color = isError ? 'var(--warn)' : 'var(--ink-soft)';
+  }
+  function clearVisCards() {
+    ['visTileImpressions','visTileClicks','visTilePosition','visTileCtr'].forEach(function(id) {
+      document.getElementById(id).textContent = '—';
+    });
+    document.getElementById('visTileDate').textContent = '';
+    document.getElementById('visTopPagesBody').innerHTML = '';
+    document.getElementById('visCwvStrip').innerHTML = '';
+    document.getElementById('visLastUpdated').textContent = '';
+  }
+  function fmtNum(n) { return n != null ? Number(n).toLocaleString() : '—'; }
+  function formatDate(d) {
+    if (!d) return '';
+    const dt = new Date(d + 'T12:00:00');
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ---- Expose to inline handlers ----
+  window._vis = {
+    onPropChange: function(val) { visSelectedId = val; loadSeoData(); },
+    triggerSync: triggerSync,
+  };
 })();
 </script>
 </body>

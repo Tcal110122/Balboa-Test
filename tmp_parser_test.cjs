@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx'
+const XLSX = require('xlsx')
 
 const FEE_CODES = new Set([
   'internet','trashrb','liabins','carport','utilreim','garage',
@@ -163,10 +163,11 @@ function parseRows(rows) {
   }
 }
 
-export function parseRentRoll(buffer) {
+function parseRentRoll(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
   return parseRows(rows)
 }
 
+module.exports = { parseRentRoll };

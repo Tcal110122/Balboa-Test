@@ -708,6 +708,95 @@
         </table>
       </div>
     </div>
+
+    <!-- ══════════════════════════════════════════════════════
+         AI VISIBILITY
+    ══════════════════════════════════════════════════════ -->
+    <div style="margin:32px 0 10px;display:flex;align-items:center;gap:12px">
+      <h2 style="font-size:16px;font-weight:700;margin:0">AI Visibility</h2>
+      <span style="font-size:12px;color:var(--ink-faint)">How AI engines respond to queries about this property</span>
+    </div>
+
+    <!-- AI presence summary tiles -->
+    <div id="visAiSummary" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:20px">
+      <div class="tile" style="opacity:.45"><div class="k">ChatGPT Mention Rate</div><div class="v" id="visAiChatgptRate">—</div><div class="x" id="visAiChatgptDetail"></div></div>
+      <div class="tile" style="opacity:.45"><div class="k">Perplexity Mention Rate</div><div class="v" id="visAiPerplexityRate">—</div><div class="x" id="visAiPerplexityDetail"></div></div>
+    </div>
+
+    <!-- Ad-hoc probe -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-hd">
+        <h2>Run a Probe Query</h2>
+        <span class="note">Ask any AI engine about this property right now</span>
+      </div>
+      <div class="card-bd" style="padding:16px 18px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <input type="text" id="visAdHocQuery" placeholder="e.g. What are the best luxury apartments in Olivette MO?" style="flex:1;min-width:280px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngChatgpt" checked> ChatGPT</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngPerplexity" checked> Perplexity</label>
+          <button class="btn" id="visAdHocRunBtn" onclick="_vis.runAdHoc()">Run</button>
+        </div>
+        <div id="visAdHocStatus" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px"></div>
+        <div id="visAdHocResults"></div>
+      </div>
+    </div>
+
+    <!-- Query library -->
+    <div class="card">
+      <div class="card-hd" style="flex-wrap:wrap;gap:10px">
+        <h2>Query Library</h2>
+        <span class="note">Saved probe queries for this property · run individually or all at once</span>
+        <div style="flex:1"></div>
+        <button class="btn ghost sm" onclick="_vis.runAllQueries()">▶ Run All</button>
+        <button class="btn ghost sm" onclick="_vis.showAddQuery()">+ Add Query</button>
+      </div>
+
+      <!-- Add/edit form (hidden by default) -->
+      <div id="visQueryForm" style="display:none;padding:14px 18px;border-bottom:1px solid var(--line-soft);background:#fafaf8">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <label class="fld" style="flex:1;min-width:240px">
+            <span>Query text</span>
+            <input type="text" id="visQFText" placeholder="Enter the exact prompt to send to AI engines">
+          </label>
+          <label class="fld">
+            <span>Category</span>
+            <select id="visQFCategory">
+              <option value="brand">Brand</option>
+              <option value="submarket">Submarket</option>
+              <option value="comparison">Comparison</option>
+              <option value="intent">Intent</option>
+              <option value="adhoc">Ad-hoc</option>
+            </select>
+          </label>
+          <input type="hidden" id="visQFId">
+          <button class="btn sm" onclick="_vis.saveQuery()">Save</button>
+          <button class="btn subtle sm" onclick="_vis.hideQueryForm()">Cancel</button>
+        </div>
+      </div>
+
+      <div class="card-bd">
+        <table>
+          <thead>
+            <tr>
+              <th class="l">Query</th>
+              <th class="l">Category</th>
+              <th>Active</th>
+              <th>Last Result</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="visQueryLibraryBody">
+            <tr><td colspan="5" class="empty" style="padding:16px 12px">Select a property to load queries</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Run-all results -->
+      <div id="visRunAllResults" style="display:none;padding:14px 18px;border-top:1px solid var(--line-soft)">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:10px">Run All — Results</div>
+        <div id="visRunAllBody"></div>
+      </div>
+    </div>
   </div>
 
   <!-- UNDERWRITING (standalone overlay, not a tab panel) -->
@@ -29534,6 +29623,7 @@ async function uwDelete(id){
 
   function onVisibilityTabOpen() {
     if (visProperties.length === 0) loadProperties();
+    else { loadAiPresence(); loadQueryLibrary(); }
   }
 
   // ---- Data loading ----
@@ -29598,6 +29688,8 @@ async function uwDelete(id){
     renderTopPages(latest);
     renderCoreWebVitals(latest);
     renderTrendChart(trend || []);
+    loadAiPresence();
+    loadQueryLibrary();
 
     if (latest) {
       document.getElementById('visLastUpdated').textContent =
@@ -29757,10 +29849,230 @@ async function uwDelete(id){
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // ---- AI Presence summary ----
+  async function loadAiPresence() {
+    if (!visSelectedId) return;
+    const { data } = await getSB()
+      .from('v_ai_presence_latest')
+      .select('*')
+      .eq('property_id', visSelectedId);
+
+    const engines = { chatgpt: null, perplexity: null };
+    (data || []).forEach(function(r) { if (engines.hasOwnProperty(r.engine)) engines[r.engine] = r; });
+
+    function renderTile(idRate, idDetail, row) {
+      if (!row) {
+        document.getElementById(idRate).textContent = '—';
+        document.getElementById(idDetail).textContent = 'No scans yet';
+        document.getElementById(idRate).closest('.tile').style.opacity = '.45';
+      } else {
+        const pct = Math.round((row.mentions / row.queries_run) * 100);
+        document.getElementById(idRate).textContent = pct + '%';
+        document.getElementById(idDetail).textContent =
+          row.mentions + ' of ' + row.queries_run + ' queries · avg rank ' + (row.avg_rank || '—');
+        document.getElementById(idRate).closest('.tile').style.opacity = '1';
+      }
+    }
+    renderTile('visAiChatgptRate', 'visAiChatgptDetail', engines.chatgpt);
+    renderTile('visAiPerplexityRate', 'visAiPerplexityDetail', engines.perplexity);
+  }
+
+  // ---- Query library ----
+  let visQueries = [];
+
+  async function loadQueryLibrary() {
+    if (!visSelectedId) return;
+    const { data, error } = await getSB()
+      .from('ai_probe_queries')
+      .select('*')
+      .eq('property_id', visSelectedId)
+      .order('category')
+      .order('query_text');
+
+    if (error) return;
+    visQueries = data || [];
+    renderQueryLibrary();
+  }
+
+  function renderQueryLibrary() {
+    const tbody = document.getElementById('visQueryLibraryBody');
+    if (!visQueries.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty" style="padding:16px 12px">No queries yet — click Add Query to create one</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    visQueries.forEach(function(q) {
+      const tr = document.createElement('tr');
+      const catColor = { brand:'#1f5c4d', submarket:'#b08428', comparison:'#4a4f57', intent:'#a8443a', adhoc:'#6b7280' };
+      tr.innerHTML =
+        '<td class="l" style="max-width:340px">' + escHtml(q.query_text) + '</td>' +
+        '<td class="l"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:' + (catColor[q.category]||'#888') + '">' + escHtml(q.category||'') + '</span></td>' +
+        '<td style="text-align:center"><input type="checkbox" ' + (q.active ? 'checked' : '') + ' onchange="_vis.toggleQuery(\'' + q.id + '\',this.checked)"></td>' +
+        '<td style="font-size:12px;color:var(--ink-faint)">—</td>' +
+        '<td style="white-space:nowrap;text-align:right">' +
+          '<button class="btn ghost sm" style="margin-right:4px" onclick="_vis.runSingleQuery(\'' + q.id + '\')">▶ Run</button>' +
+          '<button class="btn subtle sm" style="margin-right:4px" onclick="_vis.editQuery(\'' + q.id + '\')">Edit</button>' +
+          '<button class="btn danger sm" onclick="_vis.deleteQuery(\'' + q.id + '\')">Delete</button>' +
+        '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function showAddQuery() {
+    document.getElementById('visQFId').value = '';
+    document.getElementById('visQFText').value = '';
+    document.getElementById('visQFCategory').value = 'submarket';
+    document.getElementById('visQueryForm').style.display = 'block';
+    document.getElementById('visQFText').focus();
+  }
+
+  function hideQueryForm() {
+    document.getElementById('visQueryForm').style.display = 'none';
+  }
+
+  function editQuery(id) {
+    const q = visQueries.find(function(x) { return x.id === id; });
+    if (!q) return;
+    document.getElementById('visQFId').value = q.id;
+    document.getElementById('visQFText').value = q.query_text;
+    document.getElementById('visQFCategory').value = q.category || 'submarket';
+    document.getElementById('visQueryForm').style.display = 'block';
+    document.getElementById('visQFText').focus();
+  }
+
+  async function saveQuery() {
+    const id = document.getElementById('visQFId').value;
+    const text = document.getElementById('visQFText').value.trim();
+    const cat = document.getElementById('visQFCategory').value;
+    if (!text) { alert('Please enter a query.'); return; }
+
+    if (id) {
+      await getSB().from('ai_probe_queries').update({ query_text: text, category: cat }).eq('id', id);
+    } else {
+      await getSB().from('ai_probe_queries').insert({ property_id: visSelectedId, query_text: text, category: cat, active: true });
+    }
+    hideQueryForm();
+    loadQueryLibrary();
+  }
+
+  async function deleteQuery(id) {
+    if (!confirm('Delete this query?')) return;
+    await getSB().from('ai_probe_queries').delete().eq('id', id);
+    loadQueryLibrary();
+  }
+
+  async function toggleQuery(id, active) {
+    await getSB().from('ai_probe_queries').update({ active }).eq('id', id);
+    visQueries = visQueries.map(function(q) { return q.id === id ? Object.assign({}, q, { active }) : q; });
+  }
+
+  // ---- Ad-hoc probe ----
+  async function runAdHoc() {
+    const queryText = document.getElementById('visAdHocQuery').value.trim();
+    if (!queryText) { alert('Please enter a query.'); return; }
+
+    const engines = [];
+    if (document.getElementById('visEngChatgpt').checked) engines.push('chatgpt');
+    if (document.getElementById('visEngPerplexity').checked) engines.push('perplexity');
+    if (!engines.length) { alert('Select at least one engine.'); return; }
+
+    const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+    if (!prop) return;
+
+    const btn = document.getElementById('visAdHocRunBtn');
+    btn.disabled = true; btn.textContent = 'Running…';
+    const statusEl = document.getElementById('visAdHocStatus');
+    const resultsEl = document.getElementById('visAdHocResults');
+    statusEl.textContent = 'Sending query to ' + engines.join(', ') + '…';
+    resultsEl.innerHTML = '';
+
+    try {
+      const resp = await fetch(SYNC_FUNCTION_URL.replace('ingest-seo-snapshot', 'run-ai-scan'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
+        body: JSON.stringify({ property_slug: prop.slug, query_text: queryText, engines, category: 'adhoc' }),
+      });
+      const data = await resp.json();
+      if (!data.ok) { statusEl.textContent = 'Error: ' + (data.error || JSON.stringify(data)); return; }
+
+      statusEl.textContent = 'Done — ' + data.results.length + ' engine(s) responded.';
+      resultsEl.innerHTML = data.results.map(function(r) {
+        if (r.error) return '<div style="margin-bottom:12px;padding:12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px"><strong>' + r.engine + '</strong>: Error — ' + escHtml(r.error) + '</div>';
+        const badge = r.mentioned
+          ? '<span style="color:var(--pos);font-weight:700">✓ Mentioned</span>' + (r.rank ? ' · rank ' + r.rank : '')
+          : '<span style="color:var(--warn);font-weight:700">✗ Not mentioned</span>';
+        return '<div style="margin-bottom:12px;padding:12px;background:#f9fafb;border:1px solid var(--line);border-radius:6px">' +
+          '<div style="display:flex;justify-content:space-between;margin-bottom:6px">' +
+            '<strong style="font-size:13px;text-transform:capitalize">' + r.engine + '</strong>' +
+            badge +
+          '</div>' +
+          '<div style="font-size:12px;color:var(--ink-soft);line-height:1.6;white-space:pre-wrap">' + escHtml(r.full_response || '') + '</div>' +
+        '</div>';
+      }).join('');
+    } catch(err) {
+      statusEl.textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run';
+    }
+  }
+
+  // ---- Run single query ----
+  async function runSingleQuery(id) {
+    const q = visQueries.find(function(x) { return x.id === id; });
+    if (!q) return;
+    const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+    if (!prop) return;
+
+    document.getElementById('visAdHocQuery').value = q.query_text;
+    document.getElementById('visQFCategory').value = q.category;
+    document.getElementById('visAdHocResults').innerHTML = '';
+    document.getElementById('visAdHocStatus').textContent = '';
+    document.getElementById('visEngChatgpt').checked = true;
+    document.getElementById('visEngPerplexity').checked = true;
+    runAdHoc();
+  }
+
+  // ---- Run all active queries ----
+  async function runAllQueries() {
+    const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+    if (!prop) return;
+    if (!confirm('Run all active queries for ' + prop.display_name + ' against ChatGPT and Perplexity? This may take a few minutes.')) return;
+
+    const resultsDiv = document.getElementById('visRunAllResults');
+    const body = document.getElementById('visRunAllBody');
+    resultsDiv.style.display = 'block';
+    body.innerHTML = '<div style="color:var(--ink-faint);font-size:13px">Running… this may take 1-2 minutes for all queries.</div>';
+
+    try {
+      const resp = await fetch(SYNC_FUNCTION_URL.replace('ingest-seo-snapshot', 'run-ai-scan'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
+        body: JSON.stringify({ property_slug: prop.slug }),
+      });
+      const data = await resp.json();
+      if (!data.ok) { body.innerHTML = '<div style="color:var(--warn)">Error: ' + escHtml(data.error || '') + '</div>'; return; }
+
+      body.innerHTML = '<div style="font-size:13px;color:var(--pos);font-weight:600;margin-bottom:8px">✓ Scan complete — ' + data.results[0]?.queries_run + ' queries run.</div>' +
+        '<div style="font-size:12px;color:var(--ink-faint)">Results saved to database. Reload the AI presence tiles to see updated mention rates.</div>';
+      loadAiPresence();
+    } catch(err) {
+      body.innerHTML = '<div style="color:var(--warn)">Error: ' + escHtml(err.message) + '</div>';
+    }
+  }
+
   // ---- Expose to inline handlers ----
   window._vis = {
-    onPropChange: function(val) { visSelectedId = val; loadSeoData(); },
+    onPropChange: function(val) { visSelectedId = val; loadSeoData(); loadAiPresence(); loadQueryLibrary(); },
     triggerSync: triggerSync,
+    runAdHoc: runAdHoc,
+    runAllQueries: runAllQueries,
+    runSingleQuery: runSingleQuery,
+    showAddQuery: showAddQuery,
+    hideQueryForm: hideQueryForm,
+    editQuery: editQuery,
+    saveQuery: saveQuery,
+    deleteQuery: deleteQuery,
+    toggleQuery: toggleQuery,
   };
 })();
 </script>

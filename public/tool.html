@@ -29883,17 +29883,26 @@ async function uwDelete(id){
   // ---- Query library ----
   let visQueries = [];
 
+  let visLastResults = {}; // keyed by query_text -> { chatgpt, claude, perplexity }
+
   async function loadQueryLibrary() {
     if (!visSelectedId) return;
-    const { data, error } = await getSB()
-      .from('ai_probe_queries')
-      .select('*')
-      .eq('property_id', visSelectedId)
-      .order('category')
-      .order('query_text');
+    const [queriesRes, resultsRes] = await Promise.all([
+      getSB().from('ai_probe_queries').select('*').eq('property_id', visSelectedId).order('category').order('query_text'),
+      getSB().from('ai_probe_results').select('query_text,engine,property_mentioned,mention_rank,created_at')
+        .eq('property_id', visSelectedId).order('created_at', { ascending: false }).limit(500),
+    ]);
 
-    if (error) return;
-    visQueries = data || [];
+    if (queriesRes.error) return;
+    visQueries = queriesRes.data || [];
+
+    // Build last-result map: for each query_text, keep the most recent result per engine
+    visLastResults = {};
+    (resultsRes.data || []).forEach(function(r) {
+      if (!visLastResults[r.query_text]) visLastResults[r.query_text] = {};
+      if (!visLastResults[r.query_text][r.engine]) visLastResults[r.query_text][r.engine] = r;
+    });
+
     renderQueryLibrary();
   }
 
@@ -29907,11 +29916,26 @@ async function uwDelete(id){
     visQueries.forEach(function(q) {
       const tr = document.createElement('tr');
       const catColor = { brand:'#1f5c4d', submarket:'#b08428', comparison:'#4a4f57', intent:'#a8443a', adhoc:'#6b7280' };
+
+      const engineResults = visLastResults[q.query_text] || {};
+      const engineLabels = { chatgpt: 'GPT', claude: 'Claude' };
+      const badges = Object.entries(engineLabels).map(function(entry) {
+        const eng = entry[0], label = entry[1];
+        const r = engineResults[eng];
+        if (!r) return '';
+        const hit = r.property_mentioned;
+        const rankStr = hit && r.mention_rank ? ' #' + r.mention_rank : '';
+        const color = hit ? 'var(--pos,#1f5c4d)' : 'var(--ink-faint,#999)';
+        const icon = hit ? '✓' : '✗';
+        return '<span style="font-size:11px;color:' + color + ';margin-right:6px;white-space:nowrap">' + icon + ' ' + label + rankStr + '</span>';
+      }).join('');
+      const lastResultCell = badges || '<span style="font-size:12px;color:var(--ink-faint)">—</span>';
+
       tr.innerHTML =
         '<td class="l" style="max-width:340px">' + escHtml(q.query_text) + '</td>' +
         '<td class="l"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:' + (catColor[q.category]||'#888') + '">' + escHtml(q.category||'') + '</span></td>' +
         '<td style="text-align:center"><input type="checkbox" ' + (q.active ? 'checked' : '') + ' onchange="_vis.toggleQuery(\'' + q.id + '\',this.checked)"></td>' +
-        '<td style="font-size:12px;color:var(--ink-faint)">—</td>' +
+        '<td style="font-size:12px">' + lastResultCell + '</td>' +
         '<td style="white-space:nowrap;text-align:right">' +
           '<button class="btn ghost sm" style="margin-right:4px" onclick="_vis.runSingleQuery(\'' + q.id + '\')">▶ Run</button>' +
           '<button class="btn subtle sm" style="margin-right:4px" onclick="_vis.editQuery(\'' + q.id + '\')">Edit</button>' +

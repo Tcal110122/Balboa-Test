@@ -20,6 +20,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!;
 const PERPLEXITY_API_KEY = Deno.env.get('PERPLEXITY_API_KEY')!;
+const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -63,6 +64,25 @@ async function queryPerplexity(prompt: string): Promise<string> {
   if (!resp.ok) throw new Error(`Perplexity error: ${await resp.text()}`);
   const data = await resp.json();
   return data.choices[0].message.content as string;
+}
+
+async function queryClaude(prompt: string): Promise<string> {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Claude error: ${await resp.text()}`);
+  const data = await resp.json();
+  return data.content[0].text as string;
 }
 
 // ----------------------------------------------------------------
@@ -126,7 +146,7 @@ Deno.serve(async (req) => {
     const propertySlug: string | null = body.property_slug ?? null;
     const adHocQueryText: string | null = body.query_text ?? null;
     const adHocCategory: string = body.category ?? 'adhoc';
-    const requestedEngines: string[] = body.engines ?? ['chatgpt'];
+    const requestedEngines: string[] = body.engines ?? ['chatgpt', 'claude'];
 
     // ---- Ad-hoc single query mode ----
     if (adHocQueryText && propertySlug) {
@@ -147,6 +167,8 @@ Deno.serve(async (req) => {
         try {
           const response = engine === 'chatgpt'
             ? await queryOpenAI(adHocQueryText)
+            : engine === 'claude'
+            ? await queryClaude(adHocQueryText)
             : await queryPerplexity(adHocQueryText);
           const { mentioned, rank, excerpt, mentionType } = detectMention(response, prop.display_name);
           await supabase.from('ai_probe_results').insert({
@@ -215,6 +237,8 @@ Deno.serve(async (req) => {
             let response: string;
             if (engine === 'chatgpt') {
               response = await queryOpenAI(q.query_text);
+            } else if (engine === 'claude') {
+              response = await queryClaude(q.query_text);
             } else {
               response = await queryPerplexity(q.query_text);
             }

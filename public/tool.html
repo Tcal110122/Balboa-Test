@@ -718,8 +718,9 @@
     </div>
 
     <!-- AI presence summary tiles -->
-    <div id="visAiSummary" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:20px">
+    <div id="visAiSummary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
       <div class="tile" style="opacity:.45"><div class="k">ChatGPT Mention Rate</div><div class="v" id="visAiChatgptRate">—</div><div class="x" id="visAiChatgptDetail"></div></div>
+      <div class="tile" style="opacity:.45"><div class="k">Claude Mention Rate</div><div class="v" id="visAiClaudeRate">—</div><div class="x" id="visAiClaudeDetail"></div></div>
       <div class="tile" style="opacity:.45"><div class="k">Perplexity Mention Rate</div><div class="v" id="visAiPerplexityRate">—</div><div class="x" id="visAiPerplexityDetail"></div></div>
     </div>
 
@@ -733,7 +734,8 @@
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
           <input type="text" id="visAdHocQuery" placeholder="e.g. What are the best luxury apartments in Olivette MO?" style="flex:1;min-width:280px;font-size:13px">
           <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngChatgpt" checked> ChatGPT</label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngPerplexity" checked> Perplexity</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngClaude" checked> Claude</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngPerplexity"> Perplexity</label>
           <button class="btn" id="visAdHocRunBtn" onclick="_vis.runAdHoc()">Run</button>
         </div>
         <div id="visAdHocStatus" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px"></div>
@@ -29857,7 +29859,7 @@ async function uwDelete(id){
       .select('*')
       .eq('property_id', visSelectedId);
 
-    const engines = { chatgpt: null, perplexity: null };
+    const engines = { chatgpt: null, claude: null, perplexity: null };
     (data || []).forEach(function(r) { if (engines.hasOwnProperty(r.engine)) engines[r.engine] = r; });
 
     function renderTile(idRate, idDetail, row) {
@@ -29874,6 +29876,7 @@ async function uwDelete(id){
       }
     }
     renderTile('visAiChatgptRate', 'visAiChatgptDetail', engines.chatgpt);
+    renderTile('visAiClaudeRate', 'visAiClaudeDetail', engines.claude);
     renderTile('visAiPerplexityRate', 'visAiPerplexityDetail', engines.perplexity);
   }
 
@@ -29973,6 +29976,7 @@ async function uwDelete(id){
 
     const engines = [];
     if (document.getElementById('visEngChatgpt').checked) engines.push('chatgpt');
+    if (document.getElementById('visEngClaude').checked) engines.push('claude');
     if (document.getElementById('visEngPerplexity').checked) engines.push('perplexity');
     if (!engines.length) { alert('Select at least one engine.'); return; }
 

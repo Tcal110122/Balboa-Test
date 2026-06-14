@@ -724,6 +724,18 @@
       <div class="tile" style="opacity:.45"><div class="k">Perplexity Mention Rate</div><div class="v" id="visAiPerplexityRate">—</div><div class="x" id="visAiPerplexityDetail"></div></div>
     </div>
 
+    <!-- Trend chart -->
+    <div class="card" style="margin-bottom:20px" id="visTrendCard">
+      <div class="card-hd">
+        <h2>Mention Rate Over Time</h2>
+        <span class="note">ChatGPT vs Claude across all scans</span>
+      </div>
+      <div class="card-bd" style="padding:16px 18px">
+        <div id="visTrendEmpty" style="font-size:13px;color:var(--ink-faint);padding:12px 0">Run at least two scans to see trend data.</div>
+        <canvas id="visTrendChart" style="display:none;max-height:220px"></canvas>
+      </div>
+    </div>
+
     <!-- Ad-hoc probe -->
     <div class="card" style="margin-bottom:20px">
       <div class="card-hd">
@@ -29625,7 +29637,7 @@ async function uwDelete(id){
 
   function onVisibilityTabOpen() {
     if (visProperties.length === 0) loadProperties();
-    else { loadAiPresence(); loadQueryLibrary(); }
+    else { loadAiPresence(); loadTrendChart(); loadQueryLibrary(); }
   }
 
   // ---- Data loading ----
@@ -29880,6 +29892,79 @@ async function uwDelete(id){
     renderTile('visAiPerplexityRate', 'visAiPerplexityDetail', engines.perplexity);
   }
 
+  // ---- Trend chart ----
+  async function loadTrendChart() {
+    if (!visSelectedId) return;
+
+    // Fetch all completed scans for this property
+    const scansRes = await getSB().from('ai_scans')
+      .select('id, completed_at')
+      .eq('property_id', visSelectedId)
+      .eq('status', 'complete')
+      .order('completed_at', { ascending: true });
+    if (scansRes.error || !scansRes.data?.length) {
+      document.getElementById('visTrendEmpty').style.display = 'block';
+      document.getElementById('visTrendChart').style.display = 'none';
+      return;
+    }
+
+    // Fetch all results for this property
+    const resultsRes = await getSB().from('ai_probe_results')
+      .select('scan_id, engine, property_mentioned')
+      .eq('property_id', visSelectedId);
+    if (resultsRes.error) return;
+
+    // Aggregate: for each scan × engine, compute mention rate
+    const scanMap = {}; // scan_id → { date, chatgpt: {run,hit}, claude: {run,hit} }
+    scansRes.data.forEach(function(s) {
+      scanMap[s.id] = { date: s.completed_at.slice(0, 10), chatgpt: { run: 0, hit: 0 }, claude: { run: 0, hit: 0 } };
+    });
+    (resultsRes.data || []).forEach(function(r) {
+      if (!scanMap[r.scan_id]) return;
+      const eng = r.engine === 'chatgpt' ? 'chatgpt' : r.engine === 'claude' ? 'claude' : null;
+      if (!eng) return;
+      scanMap[r.scan_id][eng].run++;
+      if (r.property_mentioned) scanMap[r.scan_id][eng].hit++;
+    });
+
+    const scans = Object.values(scanMap).filter(function(s) {
+      return s.chatgpt.run + s.claude.run > 0;
+    });
+
+    if (scans.length < 2) {
+      document.getElementById('visTrendEmpty').style.display = 'block';
+      document.getElementById('visTrendChart').style.display = 'none';
+      return;
+    }
+
+    const labels = scans.map(function(s) { return s.date; });
+    const gptData = scans.map(function(s) { return s.chatgpt.run ? Math.round(s.chatgpt.hit / s.chatgpt.run * 100) : null; });
+    const claudeData = scans.map(function(s) { return s.claude.run ? Math.round(s.claude.hit / s.claude.run * 100) : null; });
+
+    document.getElementById('visTrendEmpty').style.display = 'none';
+    const canvas = document.getElementById('visTrendChart');
+    canvas.style.display = 'block';
+
+    if (visTrendChart) visTrendChart.destroy();
+    visTrendChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'ChatGPT', data: gptData, borderColor: '#10a37f', backgroundColor: 'rgba(16,163,127,.1)', tension: 0.3, pointRadius: 4 },
+          { label: 'Claude', data: claudeData, borderColor: '#c96442', backgroundColor: 'rgba(201,100,66,.1)', tension: 0.3, pointRadius: 4 },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          y: { min: 0, max: 100, ticks: { callback: function(v) { return v + '%'; } } },
+        },
+      },
+    });
+  }
+
   // ---- Query library ----
   let visQueries = [];
 
@@ -30101,7 +30186,7 @@ async function uwDelete(id){
 
   // ---- Expose to inline handlers ----
   window._vis = {
-    onPropChange: function(val) { visSelectedId = val; loadSeoData(); loadAiPresence(); loadQueryLibrary(); },
+    onPropChange: function(val) { visSelectedId = val; loadSeoData(); loadAiPresence(); loadTrendChart(); loadQueryLibrary(); },
     triggerSync: triggerSync,
     runAdHoc: runAdHoc,
     runAllQueries: runAllQueries,

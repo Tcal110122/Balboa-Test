@@ -712,51 +712,58 @@
     <!-- ══════════════════════════════════════════════════════
          AI VISIBILITY
     ══════════════════════════════════════════════════════ -->
-    <div style="margin:32px 0 10px;display:flex;align-items:center;gap:12px">
+    <div style="margin:32px 0 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <h2 style="font-size:16px;font-weight:700;margin:0">AI Visibility</h2>
-      <span style="font-size:12px;color:var(--ink-faint)">How AI engines respond to queries about this property</span>
-    </div>
-
-    <!-- AI presence summary tiles -->
-    <div id="visAiSummary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
-      <div class="tile" style="opacity:.45"><div class="k">ChatGPT Mention Rate</div><div class="v" id="visAiChatgptRate">—</div><div class="x" id="visAiChatgptDetail"></div></div>
-      <div class="tile" style="opacity:.45"><div class="k">Claude Mention Rate</div><div class="v" id="visAiClaudeRate">—</div><div class="x" id="visAiClaudeDetail"></div></div>
-      <div class="tile" style="opacity:.45"><div class="k">Perplexity Mention Rate</div><div class="v" id="visAiPerplexityRate">—</div><div class="x" id="visAiPerplexityDetail"></div></div>
-    </div>
-
-    <!-- Trend chart -->
-    <div class="card" style="margin-bottom:20px" id="visTrendCard">
-      <div class="card-hd">
-        <h2>Mention Rate Over Time</h2>
-        <span class="note">ChatGPT vs Claude across all scans</span>
-      </div>
-      <div class="card-bd" style="padding:16px 18px">
-        <div id="visTrendEmpty" style="font-size:13px;color:var(--ink-faint);padding:12px 0">Run at least two scans to see trend data.</div>
-        <canvas id="visTrendChart" style="display:none;max-height:220px"></canvas>
+      <span style="font-size:12px;color:var(--ink-faint)" id="visAiModeLabel">How AI engines respond to queries about this property</span>
+      <div style="flex:1"></div>
+      <div style="display:flex;border:1px solid var(--line-soft);border-radius:6px;overflow:hidden;font-size:12px">
+        <button id="visModePropertyBtn" onclick="_vis.setMode('property')" style="padding:5px 14px;border:none;cursor:pointer;background:var(--ink);color:var(--bg);font-size:12px;font-weight:600">Single Property</button>
+        <button id="visModePortfolioBtn" onclick="_vis.setMode('portfolio')" style="padding:5px 14px;border:none;cursor:pointer;background:transparent;color:var(--ink-faint);font-size:12px">Portfolio View</button>
       </div>
     </div>
 
-    <!-- Ad-hoc probe -->
-    <div class="card" style="margin-bottom:20px">
-      <div class="card-hd">
-        <h2>Run a Probe Query</h2>
-        <span class="note">Ask any AI engine about this property right now</span>
+    <!-- ── SINGLE PROPERTY MODE ── -->
+    <div id="visAiSingleMode">
+      <!-- AI presence summary tiles -->
+      <div id="visAiSummary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
+        <div class="tile" style="opacity:.45"><div class="k">ChatGPT Mention Rate</div><div class="v" id="visAiChatgptRate">—</div><div class="x" id="visAiChatgptDetail"></div></div>
+        <div class="tile" style="opacity:.45"><div class="k">Claude Mention Rate</div><div class="v" id="visAiClaudeRate">—</div><div class="x" id="visAiClaudeDetail"></div></div>
+        <div class="tile" style="opacity:.45"><div class="k">Perplexity Mention Rate</div><div class="v" id="visAiPerplexityRate">—</div><div class="x" id="visAiPerplexityDetail"></div></div>
       </div>
-      <div class="card-bd" style="padding:16px 18px">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-          <input type="text" id="visAdHocQuery" placeholder="e.g. What are the best luxury apartments in Olivette MO?" style="flex:1;min-width:280px;font-size:13px">
-          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngChatgpt" checked> ChatGPT</label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngClaude" checked> Claude</label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngPerplexity"> Perplexity</label>
-          <button class="btn" id="visAdHocRunBtn" onclick="_vis.runAdHoc()">Run</button>
+
+      <!-- Trend chart -->
+      <div class="card" style="margin-bottom:20px" id="visTrendCard">
+        <div class="card-hd">
+          <h2>Mention Rate Over Time</h2>
+          <span class="note">ChatGPT vs Claude across all scans</span>
         </div>
-        <div id="visAdHocStatus" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px"></div>
-        <div id="visAdHocResults"></div>
+        <div class="card-bd" style="padding:16px 18px">
+          <div id="visTrendEmpty" style="font-size:13px;color:var(--ink-faint);padding:12px 0">Run at least two scans to see trend data.</div>
+          <canvas id="visTrendChart" style="display:none;max-height:220px"></canvas>
+        </div>
       </div>
-    </div>
 
-    <!-- Query library -->
-    <div class="card">
+      <!-- Ad-hoc probe -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-hd">
+          <h2>Run a Probe Query</h2>
+          <span class="note">Ask any AI engine about this property right now</span>
+        </div>
+        <div class="card-bd" style="padding:16px 18px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+            <input type="text" id="visAdHocQuery" placeholder="e.g. What are the best luxury apartments in Olivette MO?" style="flex:1;min-width:280px;font-size:13px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngChatgpt" checked> ChatGPT</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngClaude" checked> Claude</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngPerplexity"> Perplexity</label>
+            <button class="btn" id="visAdHocRunBtn" onclick="_vis.runAdHoc()">Run</button>
+          </div>
+          <div id="visAdHocStatus" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px"></div>
+          <div id="visAdHocResults"></div>
+        </div>
+      </div>
+
+      <!-- Query library -->
+      <div class="card" id="visQueryLibraryCard">
       <div class="card-hd" style="flex-wrap:wrap;gap:10px">
         <h2>Query Library</h2>
         <span class="note">Saved probe queries for this property · run individually or all at once</span>
@@ -811,7 +818,45 @@
         <div id="visRunAllBody"></div>
       </div>
     </div>
-  </div>
+    </div> <!-- /visAiSingleMode -->
+
+    <!-- ── PORTFOLIO VIEW MODE ── -->
+    <div id="visAiPortfolioMode" style="display:none">
+
+      <!-- Summary tiles -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
+        <div class="tile"><div class="k">Properties Tracked</div><div class="v" id="visPortCount">—</div></div>
+        <div class="tile"><div class="k">Avg ChatGPT Mention Rate</div><div class="v" id="visPortGptAvg">—</div></div>
+        <div class="tile"><div class="k">Avg Claude Mention Rate</div><div class="v" id="visPortClaudeAvg">—</div></div>
+      </div>
+
+      <!-- Rankings table -->
+      <div class="card">
+        <div class="card-hd">
+          <h2>AI Visibility Rankings</h2>
+          <span class="note">All properties · sorted by combined mention rate</span>
+        </div>
+        <div class="card-bd">
+          <table>
+            <thead>
+              <tr>
+                <th class="l">Property</th>
+                <th class="l">Market</th>
+                <th>ChatGPT</th>
+                <th>Claude</th>
+                <th>Combined</th>
+                <th>Last Scanned</th>
+              </tr>
+            </thead>
+            <tbody id="visPortfolioBody">
+              <tr><td colspan="6" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div> <!-- /visAiPortfolioMode -->
+
+  </div> <!-- /panel-visibility -->
 
   <!-- UNDERWRITING (standalone overlay, not a tab panel) -->
   <div id="panel-underwriting" style="display:none;padding:0 0 40px">
@@ -29965,6 +30010,102 @@ async function uwDelete(id){
     });
   }
 
+  // ---- Mode toggle (Single Property / Portfolio) ----
+  let visMode = 'property';
+
+  function setMode(mode) {
+    visMode = mode;
+    const isSingle = mode === 'property';
+    document.getElementById('visAiSingleMode').style.display = isSingle ? '' : 'none';
+    document.getElementById('visAiPortfolioMode').style.display = isSingle ? 'none' : '';
+    document.getElementById('visPropSelect').closest('label').style.display = isSingle ? '' : 'none';
+    document.getElementById('visAiModeLabel').textContent = isSingle
+      ? 'How AI engines respond to queries about this property'
+      : 'AI mention rates across all properties';
+    document.getElementById('visModePropertyBtn').style.background = isSingle ? 'var(--ink)' : 'transparent';
+    document.getElementById('visModePropertyBtn').style.color = isSingle ? 'var(--bg)' : 'var(--ink-faint)';
+    document.getElementById('visModePortfolioBtn').style.background = isSingle ? 'transparent' : 'var(--ink)';
+    document.getElementById('visModePortfolioBtn').style.color = isSingle ? 'var(--ink-faint)' : 'var(--bg)';
+    if (!isSingle) loadPortfolioView();
+  }
+
+  // ---- Portfolio view ----
+  async function loadPortfolioView() {
+    const tbody = document.getElementById('visPortfolioBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
+
+    // Fetch all properties and all latest AI presence data in parallel
+    const [propsRes, presenceRes] = await Promise.all([
+      getSB().from('properties').select('id, display_name, city, state').eq('status', 'active').order('display_name'),
+      getSB().from('v_ai_presence_latest').select('*'),
+    ]);
+
+    if (propsRes.error || presenceRes.error) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Error loading data</td></tr>';
+      return;
+    }
+
+    // Build presence map: property_id → { chatgpt, claude }
+    const presMap = {};
+    (presenceRes.data || []).forEach(function(r) {
+      if (!presMap[r.property_id]) presMap[r.property_id] = {};
+      presMap[r.property_id][r.engine] = r;
+    });
+
+    // Build rows
+    const rows = (propsRes.data || []).map(function(p) {
+      const gpt = presMap[p.id]?.chatgpt;
+      const cld = presMap[p.id]?.claude;
+      const gptPct = gpt ? Math.round(gpt.mentions / gpt.queries_run * 100) : null;
+      const cldPct = cld ? Math.round(cld.mentions / cld.queries_run * 100) : null;
+      const combined = (gptPct !== null && cldPct !== null) ? Math.round((gptPct + cldPct) / 2)
+        : gptPct !== null ? gptPct : cldPct !== null ? cldPct : null;
+      const lastScanned = gpt?.last_scanned || cld?.last_scanned;
+      return { p, gptPct, cldPct, combined, lastScanned };
+    });
+
+    // Sort by combined desc, nulls last
+    rows.sort(function(a, b) {
+      if (a.combined === null && b.combined === null) return 0;
+      if (a.combined === null) return 1;
+      if (b.combined === null) return -1;
+      return b.combined - a.combined;
+    });
+
+    // Compute portfolio averages
+    const scanned = rows.filter(function(r) { return r.combined !== null; });
+    const avgGpt = scanned.length ? Math.round(scanned.reduce(function(s, r) { return s + (r.gptPct || 0); }, 0) / scanned.length) : null;
+    const avgCld = scanned.length ? Math.round(scanned.reduce(function(s, r) { return s + (r.cldPct || 0); }, 0) / scanned.length) : null;
+    document.getElementById('visPortCount').textContent = propsRes.data.length;
+    document.getElementById('visPortGptAvg').textContent = avgGpt !== null ? avgGpt + '%' : '—';
+    document.getElementById('visPortClaudeAvg').textContent = avgCld !== null ? avgCld + '%' : '—';
+
+    // Render table
+    function pct(v, rank) {
+      if (v === null) return '<span style="color:var(--ink-faint)">—</span>';
+      const color = v >= 60 ? 'var(--pos,#1f5c4d)' : v >= 30 ? 'var(--ink)' : 'var(--warn,#b08428)';
+      const rankStr = rank ? ' <span style="font-size:10px;color:var(--ink-faint)">avg #' + rank + '</span>' : '';
+      return '<span style="font-weight:700;color:' + color + '">' + v + '%</span>' + rankStr;
+    }
+
+    tbody.innerHTML = '';
+    rows.forEach(function(row, i) {
+      const tr = document.createElement('tr');
+      const gptRank = presMap[row.p.id]?.chatgpt?.avg_rank;
+      const cldRank = presMap[row.p.id]?.claude?.avg_rank;
+      const dateStr = row.lastScanned ? row.lastScanned.slice(0, 10) : '—';
+      const medal = i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : '';
+      tr.innerHTML =
+        '<td class="l" style="font-weight:600">' + medal + escHtml(row.p.display_name) + '</td>' +
+        '<td class="l" style="color:var(--ink-faint);font-size:12px">' + escHtml(row.p.city + ', ' + row.p.state) + '</td>' +
+        '<td style="text-align:center">' + pct(row.gptPct, gptRank) + '</td>' +
+        '<td style="text-align:center">' + pct(row.cldPct, cldRank) + '</td>' +
+        '<td style="text-align:center">' + pct(row.combined, null) + '</td>' +
+        '<td style="text-align:center;font-size:12px;color:var(--ink-faint)">' + dateStr + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
   // ---- Query library ----
   let visQueries = [];
 
@@ -30187,6 +30328,7 @@ async function uwDelete(id){
   // ---- Expose to inline handlers ----
   window._vis = {
     onPropChange: function(val) { visSelectedId = val; loadSeoData(); loadAiPresence(); loadTrendChart(); loadQueryLibrary(); },
+    setMode: setMode,
     triggerSync: triggerSync,
     runAdHoc: runAdHoc,
     runAllQueries: runAllQueries,

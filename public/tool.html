@@ -24658,6 +24658,15 @@ function commitRentRoll(){
     ${parsed.reviewCount>0?`<div class="hint warn"><b>${parsed.reviewCount} unit(s) flagged for review.</b> Filter to them on the <b>Unit Detail</b> tab and confirm against Yardi.</div>`:''}`);
   renderAll();
   updateHdr();
+  // Offer to save to portfolio
+  const occ=parsed.units.filter(u=>!u.vacant).length;
+  docStore.showSavePanel('rent_roll', file, parsed, {
+    periodDate: `${y}-${m}-${d}`,
+    sourceSystem: 'yardi',
+    totalUnits: parsed.units.length,
+    occupied: occ,
+    occupancyPct: parsed.units.length ? Math.round(occ / parsed.units.length * 100) : null,
+  }, document.getElementById('parseReport'));
 }
 
 // Parses the "Unit-Level Data" sheet — per-unit detail with REAL square footage,
@@ -25598,6 +25607,13 @@ function handleT12File(file){
       if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch('/api/parse-t12',{method:'POST',body:fd}).then(r=>{if(!r.ok)r.json().then(d=>console.warn('[T12 save failed]',r.status,d)).catch(()=>console.warn('[T12 save failed]',r.status));}).catch(e=>console.warn('[T12 save error]',e));}
             rpt.innerHTML=`<div class="hint"><b>T-12 loaded.</b> Period ${res.period||'—'} ·
         ${res.months.length} months · NOI <b>${noi}</b>.</div>`;
+      docStore.showSavePanel('t12', file, res, {
+        periodDate: res.months?.length ? null : null,
+        sourceSystem: isComparison ? 'yardi_comparison' : 'yardi',
+        period: res.period || null,
+        months: res.months?.length || null,
+        noi: res.noi?.total || null,
+      }, rpt);
     }catch(err){
       rpt.innerHTML='<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>';
     }
@@ -25834,6 +25850,7 @@ function handleBudgetFile(file){
       renderIncome();
       const endpoint=isRPM?'/api/parse-rpm-budget':'/api/parse-budget';
       if(DEAL_ID){const fd=new FormData();fd.append('file',file);fd.append('deal_id',DEAL_ID);fetch(endpoint,{method:'POST',body:fd}).catch(()=>{});}
+      const srcSys=isRPM?'rpm':isStudent?'realpage_student':isRealPage?'realpage':'yardi';
       if(isRPM){
         rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · 12-month budget for 2026. Month-by-month scorecard is in the Income tab.</div>`;
       } else if(isStudent){
@@ -25845,6 +25862,10 @@ function handleBudgetFile(file){
         const cm=res.currentMonth?res.currentMonth.charAt(0).toUpperCase()+res.currentMonth.slice(1):'none';
         rpt.innerHTML=`<div class="hint"><b>Budget loaded.</b> From the "${res.sheetName}" tab · latest closed month: <b>${cm} 2026</b>. Current-month and YTD comparisons are below.</div>`;
       }
+      docStore.showSavePanel('budget', file, res, {
+        sourceSystem: srcSys,
+        sheetName: res.sheetName || null,
+      }, rpt);
     }catch(err){
       rpt.innerHTML='<div class="hint warn"><b>Could not read file:</b> '+err.message+'</div>';
     }
@@ -30340,6 +30361,103 @@ async function uwDelete(id){
     deleteQuery: deleteQuery,
     toggleQuery: toggleQuery,
   };
+})();
+</script>
+<script>
+// ── docStore: save uploaded documents + parsed data to Supabase ──
+(function() {
+  const SB_URL = 'https://srxxgfgdckdeucyuhgrt.supabase.co';
+  const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyeHhnZmdkY2tkZXVjeXVoZ3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNTQ1OTEsImV4cCI6MjA5NDczMDU5MX0.Ap08AcjsqjpeEu0vl6WQkd49QUzN804m4J7-qqR7s7g';
+  let _sb = null;
+  function getSB() {
+    if (!_sb) _sb = supabase.createClient(SB_URL, SB_KEY);
+    return _sb;
+  }
+
+  let _properties = null;
+  async function getProperties() {
+    if (_properties) return _properties;
+    const { data } = await getSB().from('properties').select('id, slug, display_name, city, state').eq('status','active').order('display_name');
+    _properties = data || [];
+    return _properties;
+  }
+
+  function showSavePanel(docType, file, parsedData, summary, afterEl) {
+    const existing = document.getElementById('docStoreSavePanel');
+    if (existing) existing.remove();
+
+    const labels = { rent_roll: 'Rent Roll', t12: 'T-12', budget: 'Budget', comp_set: 'Comp Set' };
+    const panel = document.createElement('div');
+    panel.id = 'docStoreSavePanel';
+    panel.style.cssText = 'margin-top:10px;padding:10px 14px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px';
+    panel.innerHTML =
+      '<span style="font-weight:600;color:#15803d">Save ' + (labels[docType]||docType) + ' to portfolio:</span>' +
+      '<select id="docStorePropSel" style="font-size:13px;padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;flex:1;min-width:200px">' +
+        '<option value="">Loading properties…</option>' +
+      '</select>' +
+      '<button id="docStoreSaveBtn" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-size:13px;cursor:pointer;font-weight:600">Save</button>' +
+      '<span id="docStoreSaveStatus" style="font-size:12px;color:#6b7280"></span>';
+
+    afterEl.after(panel);
+    document.getElementById('docStoreSaveBtn').addEventListener('click', function() { save(docType); });
+
+    window._docStorePending = { file, parsedData, summary, docType };
+
+    getProperties().then(function(props) {
+      const sel = document.getElementById('docStorePropSel');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">Select property…</option>' +
+        props.map(function(p) {
+          return '<option value="' + p.id + '">' + p.display_name + ' (' + p.city + ', ' + p.state + ')</option>';
+        }).join('');
+    });
+  }
+
+  async function save(docType) {
+    const pending = window._docStorePending;
+    if (!pending) return;
+    const propId = (document.getElementById('docStorePropSel') || {}).value;
+    const status = document.getElementById('docStoreSaveStatus');
+    const btn = document.getElementById('docStoreSaveBtn');
+    if (!propId) { if(status) status.textContent = 'Select a property first.'; return; }
+
+    if(btn) btn.disabled = true;
+    if(status) status.textContent = 'Uploading file…';
+
+    try {
+      const props = await getProperties();
+      const prop = props.find(function(p) { return p.id === propId; });
+      const slug = prop ? prop.slug : propId;
+      const ts = new Date().toISOString().slice(0, 10);
+      const storagePath = slug + '/' + docType + '/' + ts + '_' + pending.file.name;
+
+      const { error: uploadErr } = await getSB().storage.from('documents').upload(storagePath, pending.file, { upsert: true });
+      if (uploadErr) throw new Error('File upload: ' + uploadErr.message);
+
+      if(status) status.textContent = 'Saving record…';
+
+      const { error: insertErr } = await getSB().from('documents').insert({
+        property_id: propId,
+        doc_type: docType,
+        filename: pending.file.name,
+        storage_path: storagePath,
+        period_date: pending.summary?.periodDate || null,
+        source_system: pending.summary?.sourceSystem || null,
+        parse_summary: pending.summary || null,
+        parsed_data: pending.parsedData || null,
+      });
+      if (insertErr) throw new Error('Record insert: ' + insertErr.message);
+
+      if(status) { status.textContent = '✓ Saved to portfolio'; status.style.color = '#15803d'; }
+      if(btn) btn.style.display = 'none';
+      window._docStorePending = null;
+    } catch(err) {
+      if(status) { status.textContent = 'Error: ' + err.message; status.style.color = '#dc2626'; }
+      if(btn) btn.disabled = false;
+    }
+  }
+
+  window.docStore = { showSavePanel, save };
 })();
 </script>
 </body>

@@ -30081,8 +30081,9 @@ async function uwDelete(id){
       if (!data.ok) { body.innerHTML = '<div style="color:var(--warn)">Error: ' + escHtml(data.error || '') + '</div>'; return; }
 
       body.innerHTML = '<div style="font-size:13px;color:var(--pos);font-weight:600;margin-bottom:8px">✓ Scan complete — ' + data.results[0]?.queries_run + ' queries run.</div>' +
-        '<div style="font-size:12px;color:var(--ink-faint)">Results saved to database. Reload the AI presence tiles to see updated mention rates.</div>';
+        '<div style="font-size:12px;color:var(--ink-faint)">Results saved to database.</div>';
       loadAiPresence();
+      loadQueryLibrary();
     } catch(err) {
       body.innerHTML = '<div style="color:var(--warn)">Error: ' + escHtml(err.message) + '</div>';
     }

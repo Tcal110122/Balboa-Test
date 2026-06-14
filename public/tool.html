@@ -29887,23 +29887,33 @@ async function uwDelete(id){
 
   async function loadQueryLibrary() {
     if (!visSelectedId) return;
-    const [queriesRes, resultsRes] = await Promise.all([
-      getSB().from('ai_probe_queries').select('*').eq('property_id', visSelectedId).order('category').order('query_text'),
-      getSB().from('ai_probe_results').select('query_text,engine,property_mentioned,mention_rank,created_at')
-        .eq('property_id', visSelectedId).order('created_at', { ascending: false }).limit(500),
-    ]);
 
+    // Load queries first so the table shows even if results fetch is slow
+    const queriesRes = await getSB().from('ai_probe_queries').select('*')
+      .eq('property_id', visSelectedId).order('category').order('query_text');
     if (queriesRes.error) return;
     visQueries = queriesRes.data || [];
-
-    // Build last-result map: for each query_text, keep the most recent result per engine
     visLastResults = {};
-    (resultsRes.data || []).forEach(function(r) {
+    renderQueryLibrary();
+
+    // Then fetch results separately and re-render with badges
+    const resultsRes = await getSB().from('ai_probe_results')
+      .select('query_text,engine,property_mentioned,mention_rank,created_at')
+      .eq('property_id', visSelectedId)
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (resultsRes.error) {
+      console.warn('loadQueryLibrary: results fetch failed', resultsRes.error);
+      return;
+    }
+    const rows = resultsRes.data || [];
+    rows.forEach(function(r) {
       if (!visLastResults[r.query_text]) visLastResults[r.query_text] = {};
       if (!visLastResults[r.query_text][r.engine]) visLastResults[r.query_text][r.engine] = r;
     });
 
-    renderQueryLibrary();
+    if (rows.length) renderQueryLibrary();
   }
 
   function renderQueryLibrary() {

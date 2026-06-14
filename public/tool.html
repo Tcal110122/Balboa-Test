@@ -29898,9 +29898,9 @@ async function uwDelete(id){
 
     // Then fetch results separately and re-render with badges
     const resultsRes = await getSB().from('ai_probe_results')
-      .select('query_text,engine,property_mentioned,mention_rank,created_at')
+      .select('query_text,engine,property_mentioned,mention_rank,captured_at')
       .eq('property_id', visSelectedId)
-      .order('created_at', { ascending: false })
+      .order('captured_at', { ascending: false })
       .limit(500);
 
     if (resultsRes.error) {

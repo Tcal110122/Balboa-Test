@@ -626,11 +626,17 @@
         <div class="sub" style="margin:0">Search Console · Keyword Rankings · Core Web Vitals</div>
       </div>
       <div class="grow"></div>
-      <label class="fld">
-        <span>Property</span>
-        <select id="visPropSelect" onchange="_vis.onPropChange(this.value)" style="min-width:220px"></select>
-      </label>
-      <button class="btn ghost" id="visSyncBtn" onclick="_vis.triggerSync()">Sync Now</button>
+      <div id="visSeoSingleControls" style="display:flex;align-items:center;gap:10px">
+        <label class="fld">
+          <span>Property</span>
+          <select id="visPropSelect" onchange="_vis.onPropChange(this.value)" style="min-width:220px"></select>
+        </label>
+        <button class="btn ghost" id="visSyncBtn" onclick="_vis.triggerSync()">Sync Now</button>
+      </div>
+      <div style="display:flex;border:1px solid var(--line-soft);border-radius:6px;overflow:hidden;font-size:12px">
+        <button id="visGscModePropertyBtn" onclick="_vis.setSeoMode('property')" style="padding:5px 14px;border:none;cursor:pointer;background:#1e293b;color:#fff;font-size:12px;font-weight:600">Single Property</button>
+        <button id="visGscModePortfolioBtn" onclick="_vis.setSeoMode('portfolio')" style="padding:5px 14px;border:none;cursor:pointer;background:transparent;color:#6b7280;font-size:12px">Portfolio View</button>
+      </div>
     </div>
 
     <!-- Status / last updated -->
@@ -638,6 +644,9 @@
       <span id="visStatus" style="font-size:12px;color:var(--ink-faint)"></span>
       <span id="visLastUpdated" style="font-size:11.5px;color:var(--ink-faint)"></span>
     </div>
+
+    <!-- ── SINGLE PROPERTY MODE ── -->
+    <div id="visSeoSingleMode">
 
     <!-- Stat tiles -->
     <div class="tiles" style="grid-template-columns:repeat(4,1fr)">
@@ -699,15 +708,131 @@
               <th class="l">Page</th>
               <th>Impressions</th>
               <th>Clicks</th>
+              <th>CTR</th>
               <th>Avg. Position</th>
             </tr>
           </thead>
           <tbody id="visTopPagesBody">
-            <tr><td colspan="4" class="empty">Select a property to load data</td></tr>
+            <tr><td colspan="5" class="empty">Select a property to load data</td></tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <!-- Branded vs. Non-Branded + Position Distribution (query-level data) -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px" id="visDimCards">
+
+      <!-- Branded split -->
+      <div class="card">
+        <div class="card-hd">
+          <h2>Branded vs. Non-Branded</h2>
+          <span class="note">28-day · by query</span>
+        </div>
+        <div class="card-bd" style="padding:16px 18px">
+          <div id="visBrandedEmpty" class="empty" style="display:none">No query data yet — run a sync</div>
+          <div id="visBrandedContent">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+              <div style="background:#f0fdf4;border-radius:8px;padding:12px 14px">
+                <div style="font-size:10px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Branded</div>
+                <div id="visBrandedImp" style="font-size:20px;font-weight:700;color:#1e293b">—</div>
+                <div id="visBrandedCtr" style="font-size:11px;color:#6b7280;margin-top:2px">— CTR</div>
+              </div>
+              <div style="background:#f8fafc;border-radius:8px;padding:12px 14px">
+                <div style="font-size:10px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Non-Branded</div>
+                <div id="visNonBrandedImp" style="font-size:20px;font-weight:700;color:#1e293b">—</div>
+                <div id="visNonBrandedCtr" style="font-size:11px;color:#6b7280;margin-top:2px">— CTR</div>
+              </div>
+            </div>
+            <!-- Split bar -->
+            <div style="height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden;margin-bottom:6px">
+              <div id="visBrandedBar" style="height:100%;background:#1a6b5a;border-radius:4px;transition:width .4s;width:0%"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af">
+              <span id="visBrandedPct">—% branded</span>
+              <span id="visNonBrandedPct">—% non-branded</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Position distribution -->
+      <div class="card">
+        <div class="card-hd">
+          <h2>Position Distribution</h2>
+          <span class="note">Query count by rank bucket · latest day</span>
+        </div>
+        <div class="card-bd" style="padding:16px 18px">
+          <div id="visPosDist" style="display:grid;gap:8px">
+            <div style="font-size:12px;color:#9ca3af">No data yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTR vs Expected by Position -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-hd">
+        <h2>CTR vs. Expected by Position</h2>
+        <span class="note">Google industry benchmarks · latest snapshot queries</span>
+      </div>
+      <div class="card-bd" style="padding:16px 18px">
+        <div id="visCtrEmpty" class="empty" style="display:none">No query data yet — run a sync</div>
+        <div id="visCtrContent">
+          <div style="position:relative;height:200px"><canvas id="visCtrCanvas"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    </div><!-- /visSeoSingleMode -->
+
+    <!-- ── PORTFOLIO VIEW MODE ── -->
+    <div id="visSeoPortfolioMode" style="display:none">
+
+      <!-- Summary tiles -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
+        <div class="tile">
+          <div class="k">Properties Tracked</div>
+          <div class="v" id="visSeoPortCount">—</div>
+          <div class="x">with GSC data</div>
+        </div>
+        <div class="tile">
+          <div class="k">Portfolio Impressions</div>
+          <div class="v" id="visSeoPortImpressions">—</div>
+          <div class="x">28-day total</div>
+        </div>
+        <div class="tile">
+          <div class="k">Portfolio Clicks</div>
+          <div class="v" id="visSeoPortClicks">—</div>
+          <div class="x">28-day total</div>
+        </div>
+      </div>
+
+      <!-- Rankings table -->
+      <div class="card">
+        <div class="card-hd">
+          <h2>Search Visibility Rankings</h2>
+          <span class="note">28-day · sorted by impressions</span>
+        </div>
+        <div class="card-bd">
+          <table>
+            <thead>
+              <tr>
+                <th class="l">Property</th>
+                <th>Impressions</th>
+                <th>Clicks</th>
+                <th>CTR</th>
+                <th>Avg. Position</th>
+                <th>Last Sync</th>
+              </tr>
+            </thead>
+            <tbody id="visSeoPortfolioBody">
+              <tr><td colspan="6" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /visSeoPortfolioMode -->
 
     <!-- ══════════════════════════════════════════════════════
          AI VISIBILITY
@@ -717,8 +842,8 @@
       <span style="font-size:12px;color:var(--ink-faint)" id="visAiModeLabel">How AI engines respond to queries about this property</span>
       <div style="flex:1"></div>
       <div style="display:flex;border:1px solid var(--line-soft);border-radius:6px;overflow:hidden;font-size:12px">
-        <button id="visModePropertyBtn" onclick="_vis.setMode('property')" style="padding:5px 14px;border:none;cursor:pointer;background:var(--ink);color:var(--bg);font-size:12px;font-weight:600">Single Property</button>
-        <button id="visModePortfolioBtn" onclick="_vis.setMode('portfolio')" style="padding:5px 14px;border:none;cursor:pointer;background:transparent;color:var(--ink-faint);font-size:12px">Portfolio View</button>
+        <button id="visModePropertyBtn" onclick="_vis.setMode('property')" style="padding:5px 14px;border:none;cursor:pointer;background:#1e293b;color:#fff;font-size:12px;font-weight:600">Single Property</button>
+        <button id="visModePortfolioBtn" onclick="_vis.setMode('portfolio')" style="padding:5px 14px;border:none;cursor:pointer;background:transparent;color:#6b7280;font-size:12px">Portfolio View</button>
       </div>
     </div>
 
@@ -728,7 +853,7 @@
       <div id="visAiSummary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
         <div class="tile" style="opacity:.45"><div class="k">ChatGPT Mention Rate</div><div class="v" id="visAiChatgptRate">—</div><div class="x" id="visAiChatgptDetail"></div></div>
         <div class="tile" style="opacity:.45"><div class="k">Claude Mention Rate</div><div class="v" id="visAiClaudeRate">—</div><div class="x" id="visAiClaudeDetail"></div></div>
-        <div class="tile" style="opacity:.45"><div class="k">Perplexity Mention Rate</div><div class="v" id="visAiPerplexityRate">—</div><div class="x" id="visAiPerplexityDetail"></div></div>
+        <div class="tile" style="opacity:.45"><div class="k">Gemini Mention Rate</div><div class="v" id="visAiGeminiRate">—</div><div class="x" id="visAiGeminiDetail"></div></div>
       </div>
 
       <!-- Trend chart -->
@@ -754,7 +879,7 @@
             <input type="text" id="visAdHocQuery" placeholder="e.g. What are the best luxury apartments in Olivette MO?" style="flex:1;min-width:280px;font-size:13px">
             <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngChatgpt" checked> ChatGPT</label>
             <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngClaude" checked> Claude</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngPerplexity"> Perplexity</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="visEngGemini"> Gemini</label>
             <button class="btn" id="visAdHocRunBtn" onclick="_vis.runAdHoc()">Run</button>
           </div>
           <div id="visAdHocStatus" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px"></div>
@@ -856,12 +981,100 @@
       </div>
     </div> <!-- /visAiPortfolioMode -->
 
+    <!-- ══════════════════════════════════════════════════════
+         PPC / GOOGLE ADS — APPROVAL QUEUE
+    ══════════════════════════════════════════════════════ -->
+    <div style="margin:32px 0 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <h2 style="font-size:16px;font-weight:700;margin:0">PPC Optimization Queue</h2>
+      <span style="font-size:12px;color:var(--ink-faint)">AI-generated recommendations · approve or reject before anything pushes to Google</span>
+      <div style="flex:1"></div>
+      <select id="ppcFilterProperty" onchange="_ppc.filter()" style="font-size:12px;border:1px solid var(--line-soft);border-radius:6px;padding:4px 10px;background:var(--bg)">
+        <option value="">All Properties</option>
+      </select>
+      <select id="ppcFilterType" onchange="_ppc.filter()" style="font-size:12px;border:1px solid var(--line-soft);border-radius:6px;padding:4px 10px;background:var(--bg)">
+        <option value="">All Types</option>
+        <option value="ADD_NEGATIVE">Negative Keywords</option>
+        <option value="REALLOCATE_BUDGET">Budget Reallocation</option>
+        <option value="ADJUST_TCPA">Adjust tCPA</option>
+        <option value="TIGHTEN_GEO">Tighten Geo</option>
+        <option value="PAUSE_KEYWORD">Pause Keyword</option>
+      </select>
+      <button class="btn ghost sm" onclick="_ppc.bulkApproveNegatives()" id="ppcBulkBtn" style="display:none">Approve All HIGH Negatives</button>
+    </div>
+
+    <!-- Summary bar -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px" id="ppcSummaryTiles">
+      <div class="tile" style="opacity:.45"><div class="k">Pending Recommendations</div><div class="v" id="ppcTilePending">—</div></div>
+      <div class="tile" style="opacity:.45"><div class="k">Est. Monthly Savings</div><div class="v" id="ppcTileSavings">—</div><div class="x">from pending recs</div></div>
+      <div class="tile" style="opacity:.45"><div class="k">High-Confidence Actions</div><div class="v" id="ppcTileHigh">—</div><div class="x">ready to approve</div></div>
+    </div>
+
+    <!-- Recommendations table -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-hd">
+        <h2>Pending Recommendations</h2>
+        <span class="note" id="ppcTableNote">Sorted by estimated savings</span>
+      </div>
+      <div class="card-bd" style="padding:0">
+        <table id="ppcRecsTable">
+          <thead>
+            <tr>
+              <th class="l">Property</th>
+              <th class="l">Type</th>
+              <th class="l" style="max-width:340px">Rationale</th>
+              <th>Confidence</th>
+              <th>Est. Savings/mo</th>
+              <th style="min-width:160px"></th>
+            </tr>
+          </thead>
+          <tbody id="ppcRecsBody">
+            <tr><td colspan="6" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Decided history -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-hd">
+        <h2>Decision History</h2>
+        <span class="note">Approved · Rejected · Pushed</span>
+      </div>
+      <div class="card-bd" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th class="l">Property</th>
+              <th class="l">Type</th>
+              <th class="l" style="max-width:280px">Rationale</th>
+              <th>Status</th>
+              <th>Est. Savings/mo</th>
+              <th>Decided</th>
+            </tr>
+          </thead>
+          <tbody id="ppcHistoryBody">
+            <tr><td colspan="6" class="empty">No decisions yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div> <!-- /panel-visibility -->
 
   <!-- UNDERWRITING (standalone overlay, not a tab panel) -->
   <div id="panel-underwriting" style="display:none;padding:0 0 40px">
-    <div style="padding:20px 0 14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div style="padding:20px 0 10px;display:flex;align-items:center;gap:12px">
       <h2 style="font-size:16px;font-weight:700;margin:0">Underwriting Deal Database</h2>
+    </div>
+    <!-- Tab bar -->
+    <div style="display:flex;gap:0;border-bottom:2px solid #e2e8f0;margin-bottom:16px">
+      <button id="uwTab-deals" onclick="uwShowTab('deals')" style="padding:8px 18px;border:none;background:transparent;font-size:13px;font-weight:700;color:#1e293b;border-bottom:2px solid #1e293b;cursor:pointer;margin-bottom:-2px">Deal Database</button>
+      <button id="uwTab-oz" onclick="uwShowTab('oz')" style="padding:8px 18px;border:none;background:transparent;font-size:13px;font-weight:400;color:#6b7280;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px">OZ SI Model</button>
+    </div>
+
+    <!-- Deal Database tab -->
+    <div id="uwTabDeals">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
       <button id="uwAddBtn" onclick="uwShowAddForm()" style="padding:6px 16px;background:#1e293b;color:#fff;border:none;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">+ Add Deal</button>
       <label style="padding:6px 14px;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">
         ⬆ Batch Import JSON
@@ -942,7 +1155,78 @@
     </div>
 
     <div id="uwContent"><div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px">Loading…</div></div>
-  </div>
+    </div><!-- /uwTabDeals -->
+
+    <!-- OZ SI Model tab -->
+    <div id="uwTabOZ" style="display:none;padding-bottom:40px">
+      <div style="max-width:920px">
+        <div style="background:#0f2340;border-radius:10px;padding:18px 24px;margin-bottom:16px">
+          <div style="font-size:10px;letter-spacing:2px;color:#c49a2a;text-transform:uppercase;margin-bottom:4px">Balboa Real Estate Partners</div>
+          <div style="font-size:18px;font-weight:800;color:#fff">Rural OZ Substantial Improvement Model</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:4px">50% basis threshold · §266 carry capitalization · bonus depreciation (Year 1)</div>
+        </div>
+        <!-- KPI badges -->
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="background:#0f2340;border-radius:8px;padding:12px 16px;flex:1;min-width:130px">
+            <div style="font-size:9px;color:rgba(255,255,255,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">Required Improvements</div>
+            <div id="oz-req" style="font-size:18px;font-weight:800;color:#fff"></div>
+            <div style="font-size:9px;color:rgba(255,255,255,0.5);margin-top:2px">50% of post-bonus PP</div>
+          </div>
+          <div style="background:#1a6b5a;border-radius:8px;padding:12px 16px;flex:1;min-width:130px">
+            <div style="font-size:9px;color:rgba(255,255,255,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">Tx Costs + Carry</div>
+            <div id="oz-soft" style="font-size:18px;font-weight:800;color:#fff"></div>
+            <div id="oz-soft-sub" style="font-size:9px;color:rgba(255,255,255,0.5);margin-top:2px"></div>
+          </div>
+          <div id="oz-hard-badge" style="border-radius:8px;padding:12px 16px;flex:1;min-width:130px">
+            <div style="font-size:9px;color:rgba(255,255,255,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">Hard CapEx Needed</div>
+            <div id="oz-hard" style="font-size:18px;font-weight:800;color:#fff"></div>
+            <div style="font-size:9px;color:rgba(255,255,255,0.5);margin-top:2px">After soft offset</div>
+          </div>
+          <div style="background:#2c3e50;border-radius:8px;padding:12px 16px;flex:1;min-width:130px">
+            <div style="font-size:9px;color:rgba(255,255,255,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">Total Equity at Close</div>
+            <div id="oz-equity" style="font-size:18px;font-weight:800;color:#fff"></div>
+            <div style="font-size:9px;color:rgba(255,255,255,0.5);margin-top:2px">Down payment + tx costs</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <!-- Sliders -->
+          <div style="flex:0 0 264px;background:#fff;border-radius:10px;padding:16px 18px;border:1px solid #dde3ec;align-self:start">
+            <div style="font-size:10px;font-weight:700;color:#0f2340;letter-spacing:1px;text-transform:uppercase;margin-bottom:14px;border-bottom:2px solid #c49a2a;padding-bottom:6px">Assumptions</div>
+            <div style="font-size:9px;font-weight:700;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px">Acquisition</div>
+            <div id="ozsl-pp"></div><div id="ozsl-lv"></div><div id="ozsl-cr"></div><div id="ozsl-tx"></div>
+            <div style="font-size:9px;font-weight:700;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.8px;margin:12px 0 8px">Depreciation</div>
+            <div id="ozsl-bp"></div>
+            <div style="font-size:9px;font-weight:700;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.8px;margin:12px 0 8px">Financing</div>
+            <div id="ozsl-ltc"></div><div id="ozsl-ir"></div>
+            <div style="font-size:9px;font-weight:700;color:#1a6b5a;text-transform:uppercase;letter-spacing:0.8px;margin:12px 0 8px">Carry Costs (§266)</div>
+            <div id="ozsl-tr"></div><div id="ozsl-ins"></div><div id="ozsl-rm"></div>
+          </div>
+          <!-- Output tables -->
+          <div style="flex:1;min-width:300px">
+            <div style="background:#fff;border-radius:10px;border:1px solid #dde3ec;margin-bottom:12px;overflow:hidden">
+              <div style="background:#0f2340;padding:8px 12px;font-size:10px;font-weight:700;color:#fff;letter-spacing:0.8px;text-transform:uppercase">Acquisition &amp; Adjusted Basis</div>
+              <table style="width:100%;border-collapse:collapse" id="oz-tbl-acq"></table>
+            </div>
+            <div style="background:#fff;border-radius:10px;border:1px solid #dde3ec;margin-bottom:12px;overflow:hidden">
+              <div style="background:#2c3e50;padding:8px 12px;font-size:10px;font-weight:700;color:#fff;letter-spacing:0.8px;text-transform:uppercase">Financing &amp; NOI</div>
+              <table style="width:100%;border-collapse:collapse" id="oz-tbl-fin"></table>
+            </div>
+            <div style="background:#fff;border-radius:10px;border:1px solid #dde3ec;margin-bottom:12px;overflow:hidden">
+              <div style="background:#1a6b5a;padding:8px 12px;font-size:10px;font-weight:700;color:#fff;letter-spacing:0.8px;text-transform:uppercase">Additions to Basis During Window</div>
+              <table style="width:100%;border-collapse:collapse" id="oz-tbl-add"></table>
+            </div>
+            <div style="background:#fff;border-radius:10px;border:1px solid #dde3ec;overflow:hidden">
+              <div style="background:#c49a2a;padding:8px 12px;font-size:10px;font-weight:700;color:#0f2340;letter-spacing:0.8px;text-transform:uppercase">Rural OZ Substantial Improvement Test (50% Threshold)</div>
+              <table style="width:100%;border-collapse:collapse" id="oz-tbl-si"></table>
+              <div id="oz-insight" style="padding:10px 12px;background:#f0f9f6;border-top:1px solid #dde3ec;font-size:11px;color:#333;line-height:1.6"></div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:14px;font-size:10px;color:#aaa;text-align:center">Balboa Real Estate Partners · Rural OZ Model · For internal planning purposes only · Consult tax counsel before relying on §266 elections</div>
+      </div>
+    </div><!-- /uwTabOZ -->
+
+  </div><!-- /panel-underwriting -->
 
   <!-- QUERIES -->
   <div class="panel" id="panel-queries">
@@ -24574,17 +24858,77 @@ function parseEntrataRR(rows){
   return{asOf,units,skipped:0,dupCount:0,preleasedVacant,reviewCount:units.filter(u=>u.inplaceReview).length};
 }
 
+/* ============ RealPage BI Rent Roll Parser ============ */
+function parseRealPageBIRR(rows){
+  let asOf='';
+  for(let i=0;i<Math.min(15,rows.length)&&!asOf;i++)
+    for(const cell of (rows[i]||[])){
+      const m=String(cell||'').match(/as\s+of\s+date:\s*(.+)/i);
+      if(m){const d=new Date(m[1].trim());if(!isNaN(d))asOf=d.toISOString().slice(0,10);break;}
+    }
+  let hdrRow=-1;
+  for(let i=0;i<Math.min(20,rows.length);i++){
+    if((rows[i]||[]).some(c=>/^unit\s*#$/i.test(String(c||'')))){hdrRow=i;break;}
+  }
+  if(hdrRow<0) return{units:[],asOf,dupCount:0,preleasedVacant:0,reviewCount:0,skipped:0};
+  const hdr=rows[hdrRow];
+  const col=re=>hdr.findIndex(c=>re.test(String(c||'')));
+  const C_UNIT=col(/^unit\s*#$/i),C_FP=col(/^floor\s*plan$/i),C_SQFT=col(/^sqft$/i);
+  const C_STATUS=col(/unit.*lease.*status/i),C_NAME=col(/resident\s*name/i);
+  const C_MOVEIN=col(/^move\s*in\s*$/i),C_LEASEEND=col(/^lease\s*end$/i);
+  const C_MARKET=col(/^market\s*rent$/i),C_LEASRENT=col(/^lease\s*rent$/i);
+  const C_AMENITY=col(/^amenities$/i),C_TOTAL=col(/^total\s*billing$/i);
+  const VACANT_RE=/^(vacant|vacant-leased|model|storage|admin|down|co|const|emp|employee)/i;
+  const SKIP_RE=/^(pending renewal|applicant|pending)$/i;
+  const byUnit={};
+  for(let i=hdrRow+1;i<rows.length;i++){
+    const row=rows[i]||[];
+    const unitId=String(row[C_UNIT]||'').trim();
+    if(!unitId) continue;
+    const status=String(row[C_STATUS]||'').trim();
+    if(!byUnit[unitId]){
+      byUnit[unitId]={unit:unitId,utype:String(row[C_FP]||'').trim(),sqft:num(row[C_SQFT]),
+        status,name:String(row[C_NAME]||'').trim(),
+        moveIn:toISODate(row[C_MOVEIN]),leaseEnd:toISODate(row[C_LEASEEND]),
+        market:num(row[C_MARKET]),leaseRent:num(row[C_LEASRENT]),
+        amenities:num(row[C_AMENITY])||0,totalBilling:num(row[C_TOTAL]),hasExtra:false};
+    } else { byUnit[unitId].hasExtra=true; }
+  }
+  let dupCount=0,preleasedVacant=0,reviewCount=0;
+  const units=Object.values(byUnit).filter(u=>!SKIP_RE.test(u.status)).map(u=>{
+    if(u.hasExtra) dupCount++;
+    const isVacant=VACANT_RE.test(u.status)||!u.name;
+    const isPreLeased=isVacant&&u.hasExtra;
+    if(isPreLeased) preleasedVacant++;
+    let inplace=null,inplaceReview=false;
+    if(!isVacant){
+      if(u.leaseRent!=null&&u.leaseRent>0){inplace=u.leaseRent;}
+      else if(u.totalBilling!=null&&u.totalBilling>0){inplace=u.totalBilling-u.amenities;inplaceReview=true;}
+      else{inplaceReview=true;}
+      if(inplace!=null&&u.market!=null&&u.market>0&&(inplace<0.4*u.market||inplace>1.5*u.market)) inplaceReview=true;
+      if(inplaceReview) reviewCount++;
+    }
+    return{unit:u.unit,utype:u.utype,sqft:u.sqft,tier:tierOf(u.sqft),
+      vacant:isVacant,preLeased:isPreLeased,market:u.market,inplace,inplaceReview,
+      fees:u.amenities,leaseExp:u.leaseEnd,moveIn:u.moveIn,
+      name:isVacant?'VACANT':u.name,residentId:''};
+  });
+  return{asOf,units,skipped:0,dupCount,preleasedVacant,reviewCount};
+}
+
 function handleFile(file){
   const reader=new FileReader();
   reader.onload=e=>{
     try{
       const data=new Uint8Array(e.target.result);
       const wb=XLSX.read(data,{type:'array',cellDates:true});
-      const ws=wb.Sheets[wb.SheetNames[0]];
+      // RealPage BI: has a "Rent Roll Detail" sheet — use that sheet
+      const rrDetailSheet=wb.SheetNames.find(n=>/rent roll detail/i.test(n));
+      let fmt=rrDetailSheet?'realpage-bi':'yardi';
+      const ws=wb.Sheets[rrDetailSheet||wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
       // Detect format: brand-name scan first, then column-pattern fallback
-      let fmt='yardi';
-      for(let i=0;i<Math.min(20,rows.length)&&fmt==='yardi';i++)
+      if(fmt==='yardi') for(let i=0;i<Math.min(20,rows.length)&&fmt==='yardi';i++)
         for(const cell of (rows[i]||[])){
           const s=String(cell||'');
           if(/onesite/i.test(s)){fmt='onesite';break;}
@@ -24601,7 +24945,7 @@ function handleFile(file){
           if(/bldg.?unit|^unit$/i.test(String(row[0]||''))&&/^sqft$|^sq\.?\s*ft/i.test(String(row[1]||''))){fmt='entrata';break;}
         }
       }
-      const parsed=fmt==='onesite'?parseOneSiteRR(rows):fmt==='entrata'?parseEntrataRR(rows):fmt==='yardidetail'?parseYardiDetailRR(rows):parseRentRoll(rows);
+      const parsed=fmt==='onesite'?parseOneSiteRR(rows):fmt==='entrata'?parseEntrataRR(rows):fmt==='yardidetail'?parseYardiDetailRR(rows):fmt==='realpage-bi'?parseRealPageBIRR(rows):parseRentRoll(rows);
       if(!parsed.units.length){
         showParseReport('<div class="hint warn"><b>No units found.</b> Make sure this is a Yardi, OneSite, or Entrata rent roll export.</div>');
         return;
@@ -29744,14 +30088,17 @@ async function uwDelete(id){
     setVisStatus('Loading SEO data…');
     clearVisCards();
 
-    // Latest snapshot
-    const { data: latest, error: e1 } = await getSB()
-      .from('v_seo_latest')
+    // Latest snapshot with real data (skip zero-impression days caused by GSC lag)
+    const { data: latestRows, error: e1 } = await getSB()
+      .from('seo_snapshots')
       .select('*')
       .eq('property_id', visSelectedId)
-      .maybeSingle();
+      .gt('impressions', 0)
+      .order('captured_at', { ascending: false })
+      .limit(1);
 
     if (e1) { setVisStatus('Error: ' + e1.message, true); return; }
+    const latest = latestRows && latestRows.length ? latestRows[0] : null;
 
     // 30-day trend
     const thirtyDaysAgo = new Date();
@@ -29763,11 +30110,57 @@ async function uwDelete(id){
       .gte('captured_at', thirtyDaysAgo.toISOString().split('T')[0])
       .order('captured_at');
 
+    // Branded split (28 days)
+    const thirtyDaysAgoQ = new Date();
+    thirtyDaysAgoQ.setDate(thirtyDaysAgoQ.getDate() - 28);
+    const { data: brandedRows } = await getSB()
+      .from('v_seo_branded_split')
+      .select('is_branded, impressions, clicks, ctr')
+      .eq('property_id', visSelectedId)
+      .gte('captured_at', thirtyDaysAgoQ.toISOString().split('T')[0]);
+
+    // Position distribution (latest day)
+    const { data: posDist } = await getSB()
+      .from('v_seo_position_distribution')
+      .select('pos_1_3, pos_4_10, pos_11_20, pos_21_plus')
+      .eq('property_id', visSelectedId)
+      .order('captured_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Page rows — find the most recent date with data, then fetch only that date
+    const { data: latestPageDate } = await getSB()
+      .from('seo_page_rows')
+      .select('captured_at')
+      .eq('property_id', visSelectedId)
+      .order('captured_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: pageRows } = latestPageDate ? await getSB()
+      .from('seo_page_rows')
+      .select('page, impressions, clicks, ctr, avg_position')
+      .eq('property_id', visSelectedId)
+      .eq('captured_at', latestPageDate.captured_at)
+      .order('impressions', { ascending: false })
+      .limit(25) : { data: [] };
+
+    // Query rows for CTR-by-position (latest day)
+    const { data: queryRows } = await getSB()
+      .from('seo_query_rows')
+      .select('avg_position, ctr')
+      .eq('property_id', visSelectedId)
+      .order('captured_at', { ascending: false })
+      .limit(250);
+
     setVisStatus('');
     renderSeoCards(latest);
-    renderTopPages(latest);
+    renderTopPages(pageRows || [], latest);
     renderCoreWebVitals(latest);
     renderTrendChart(trend || []);
+    renderBrandedSplit(brandedRows || []);
+    renderPosDist(posDist);
+    renderCtrByPosition(queryRows || []);
     loadAiPresence();
     loadQueryLibrary();
 
@@ -29790,26 +30183,151 @@ async function uwDelete(id){
     document.getElementById('visTileDate').textContent = d.captured_at ? formatDate(d.captured_at) : '';
   }
 
-  function renderTopPages(d) {
+  function formatPageLabel(raw) {
+    // Strip UTM params — mark as GMB if applicable
+    const gmb = raw.includes('utm_source=gmb') || raw.includes('utm_medium=organic');
+    const path = raw.split('?')[0];
+    // Segment-to-label rules
+    const seg = path.replace(/^\/|\/$/g, ''); // strip leading/trailing slashes
+    if (!seg) return gmb ? 'Homepage (GMB)' : 'Homepage';
+    const parts = seg.split('/');
+    // /floorplans/plan-name/ → "Floor Plan: Plan Name"
+    if (parts[0] === 'floorplans' && parts.length >= 2 && parts[1]) {
+      const plan = parts[1].replace(/-/g, ' ').replace(/\b\w/g, function(c){return c.toUpperCase();});
+      return 'Floor Plan: ' + plan;
+    }
+    // /p/page-name/ → strip /p/ prefix
+    if (parts[0] === 'p' && parts.length >= 2) parts.shift();
+    // General slug → Title Case
+    const label = parts.map(function(s){
+      return s.replace(/-/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
+    }).join(' › ');
+    return label + (gmb ? ' (GMB)' : '');
+  }
+
+  function renderTopPages(pageRows, fallback) {
     const tbody = document.getElementById('visTopPagesBody');
     tbody.innerHTML = '';
-    if (!d || !d.top_pages || !d.top_pages.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty">No page data</td></tr>';
+    // Prefer seo_page_rows; fall back to top_pages JSONB on old snapshots
+    var pages = pageRows && pageRows.length ? pageRows
+      : (fallback && Array.isArray(fallback.top_pages) ? fallback.top_pages.map(function(p) {
+          return { page: p.page, impressions: p.impressions, clicks: p.clicks, ctr: p.ctr, avg_position: p.position };
+        }) : []);
+    if (!pages.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No page data</td></tr>';
       return;
     }
-    const pages = Array.isArray(d.top_pages) ? d.top_pages : [];
     const maxImp = Math.max(...pages.map(function(p) { return p.impressions || 0; }), 1);
     pages.forEach(function(p) {
       const pct = Math.round((p.impressions / maxImp) * 100);
+      const ctrStr = p.ctr != null ? (p.ctr * 100).toFixed(1) + '%' : '—';
+      const pos = p.avg_position != null ? p.avg_position : p.position;
       const tr = document.createElement('tr');
       tr.innerHTML =
         '<td class="l" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">' +
-          '<span title="' + escHtml(p.page) + '">' + escHtml(p.page) + '</span></td>' +
+          '<span title="' + escHtml(p.page) + '">' + escHtml(formatPageLabel(p.page)) + '</span></td>' +
         '<td><div class="barwrap"><div class="bar"><div style="width:' + pct + '%;background:var(--accent)"></div></div>' +
           '<span>' + fmtNum(p.impressions) + '</span></div></td>' +
         '<td>' + fmtNum(p.clicks) + '</td>' +
-        '<td>' + (p.position != null ? p.position.toFixed(1) : '—') + '</td>';
+        '<td>' + ctrStr + '</td>' +
+        '<td>' + (pos != null ? (+pos).toFixed(1) : '—') + '</td>';
       tbody.appendChild(tr);
+    });
+  }
+
+  function renderBrandedSplit(rows) {
+    if (!rows.length) {
+      document.getElementById('visBrandedContent').style.display = 'none';
+      document.getElementById('visBrandedEmpty').style.display = '';
+      return;
+    }
+    document.getElementById('visBrandedContent').style.display = '';
+    document.getElementById('visBrandedEmpty').style.display = 'none';
+    var branded = { impressions: 0, clicks: 0 };
+    var nonBranded = { impressions: 0, clicks: 0 };
+    rows.forEach(function(r) {
+      var target = r.is_branded ? branded : nonBranded;
+      target.impressions += (r.impressions || 0);
+      target.clicks += (r.clicks || 0);
+    });
+    var total = branded.impressions + nonBranded.impressions;
+    var bPct = total > 0 ? Math.round(branded.impressions / total * 100) : 0;
+    var bCtr = branded.impressions > 0 ? (branded.clicks / branded.impressions * 100).toFixed(1) + '%' : '—';
+    var nCtr = nonBranded.impressions > 0 ? (nonBranded.clicks / nonBranded.impressions * 100).toFixed(1) + '%' : '—';
+    document.getElementById('visBrandedImp').textContent = fmtNum(branded.impressions);
+    document.getElementById('visBrandedCtr').textContent = bCtr + ' CTR';
+    document.getElementById('visNonBrandedImp').textContent = fmtNum(nonBranded.impressions);
+    document.getElementById('visNonBrandedCtr').textContent = nCtr + ' CTR';
+    document.getElementById('visBrandedBar').style.width = bPct + '%';
+    document.getElementById('visBrandedPct').textContent = bPct + '% branded';
+    document.getElementById('visNonBrandedPct').textContent = (100 - bPct) + '% non-branded';
+  }
+
+  function renderPosDist(d) {
+    var el = document.getElementById('visPosDist');
+    if (!d) { el.innerHTML = '<div style="font-size:12px;color:#9ca3af">No data yet — run a sync</div>'; return; }
+    var buckets = [
+      { label: 'Pos 1–3', value: d.pos_1_3 || 0, color: '#1a6b5a' },
+      { label: 'Pos 4–10', value: d.pos_4_10 || 0, color: '#3b82f6' },
+      { label: 'Pos 11–20', value: d.pos_11_20 || 0, color: '#f59e0b' },
+      { label: 'Pos 21+', value: d.pos_21_plus || 0, color: '#e5e7eb' },
+    ];
+    var total = buckets.reduce(function(s, b) { return s + b.value; }, 0) || 1;
+    el.innerHTML = buckets.map(function(b) {
+      var pct = Math.round(b.value / total * 100);
+      return '<div style="display:grid;grid-template-columns:70px 1fr 36px 32px;align-items:center;gap:8px">' +
+        '<span style="font-size:11px;color:#6b7280">' + b.label + '</span>' +
+        '<div style="height:8px;border-radius:4px;background:#f1f5f9;overflow:hidden">' +
+          '<div style="height:100%;width:' + pct + '%;background:' + b.color + ';border-radius:4px"></div>' +
+        '</div>' +
+        '<span style="font-size:12px;font-weight:600;color:#1e293b;text-align:right">' + b.value + '</span>' +
+        '<span style="font-size:10px;color:#9ca3af">' + pct + '%</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  var visCtrChart = null;
+  function renderCtrByPosition(rows) {
+    document.getElementById('visCtrEmpty').style.display = rows.length ? 'none' : '';
+    document.getElementById('visCtrContent').style.display = rows.length ? '' : 'none';
+    if (!rows.length) return;
+    // Industry benchmarks (Sistrix/AWR approximations)
+    var EXPECTED = { 1: 0.28, 2: 0.15, 3: 0.11, 4: 0.08, 5: 0.07, 6: 0.06, 7: 0.05, 8: 0.04, 9: 0.04, 10: 0.03 };
+    // Bucket rows into positions 1-10
+    var buckets = {};
+    rows.forEach(function(r) {
+      var pos = Math.round(r.avg_position);
+      if (pos >= 1 && pos <= 10) {
+        if (!buckets[pos]) buckets[pos] = { ctrSum: 0, count: 0 };
+        buckets[pos].ctrSum += (r.ctr || 0);
+        buckets[pos].count++;
+      }
+    });
+    var labels = [], actual = [], expected = [];
+    for (var i = 1; i <= 10; i++) {
+      labels.push('Pos ' + i);
+      actual.push(buckets[i] ? +(buckets[i].ctrSum / buckets[i].count * 100).toFixed(2) : null);
+      expected.push(+(EXPECTED[i] * 100).toFixed(2));
+    }
+    var canvas = document.getElementById('visCtrCanvas');
+    if (visCtrChart) { visCtrChart.destroy(); visCtrChart = null; }
+    visCtrChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Actual CTR %', data: actual, backgroundColor: 'rgba(26,107,90,0.75)', borderRadius: 3 },
+          { label: 'Expected CTR %', data: expected, type: 'line', borderColor: '#f59e0b', backgroundColor: 'transparent', pointRadius: 3, tension: 0.3 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { font: { size: 11 } } } },
+        scales: {
+          y: { ticks: { callback: function(v) { return v + '%'; }, font: { size: 10 } }, grid: { color: '#f1f5f9' } },
+          x: { ticks: { font: { size: 10 } } },
+        },
+      },
     });
   }
 
@@ -29937,7 +30455,7 @@ async function uwDelete(id){
       .select('*')
       .eq('property_id', visSelectedId);
 
-    const engines = { chatgpt: null, claude: null, perplexity: null };
+    const engines = { chatgpt: null, claude: null, gemini: null };
     (data || []).forEach(function(r) { if (engines.hasOwnProperty(r.engine)) engines[r.engine] = r; });
 
     function renderTile(idRate, idDetail, row) {
@@ -29955,7 +30473,7 @@ async function uwDelete(id){
     }
     renderTile('visAiChatgptRate', 'visAiChatgptDetail', engines.chatgpt);
     renderTile('visAiClaudeRate', 'visAiClaudeDetail', engines.claude);
-    renderTile('visAiPerplexityRate', 'visAiPerplexityDetail', engines.perplexity);
+    renderTile('visAiGeminiRate', 'visAiGeminiDetail', engines.gemini);
   }
 
   // ---- Trend chart ----
@@ -30043,10 +30561,12 @@ async function uwDelete(id){
     document.getElementById('visAiModeLabel').textContent = isSingle
       ? 'How AI engines respond to queries about this property'
       : 'AI mention rates across all properties';
-    document.getElementById('visModePropertyBtn').style.background = isSingle ? 'var(--ink)' : 'transparent';
-    document.getElementById('visModePropertyBtn').style.color = isSingle ? 'var(--bg)' : 'var(--ink-faint)';
-    document.getElementById('visModePortfolioBtn').style.background = isSingle ? 'transparent' : 'var(--ink)';
-    document.getElementById('visModePortfolioBtn').style.color = isSingle ? 'var(--ink-faint)' : 'var(--bg)';
+    document.getElementById('visModePropertyBtn').style.background = isSingle ? '#1e293b' : 'transparent';
+    document.getElementById('visModePropertyBtn').style.color = isSingle ? '#fff' : '#6b7280';
+    document.getElementById('visModePropertyBtn').style.fontWeight = isSingle ? '600' : '400';
+    document.getElementById('visModePortfolioBtn').style.background = isSingle ? 'transparent' : '#1e293b';
+    document.getElementById('visModePortfolioBtn').style.color = isSingle ? '#6b7280' : '#fff';
+    document.getElementById('visModePortfolioBtn').style.fontWeight = isSingle ? '400' : '600';
     if (!isSingle) loadPortfolioView();
   }
 
@@ -30130,7 +30650,7 @@ async function uwDelete(id){
   // ---- Query library ----
   let visQueries = [];
 
-  let visLastResults = {}; // keyed by query_text -> { chatgpt, claude, perplexity }
+  let visLastResults = {}; // keyed by query_text -> { chatgpt, claude, gemini }
 
   async function loadQueryLibrary() {
     if (!visSelectedId) return;
@@ -30258,7 +30778,7 @@ async function uwDelete(id){
     const engines = [];
     if (document.getElementById('visEngChatgpt').checked) engines.push('chatgpt');
     if (document.getElementById('visEngClaude').checked) engines.push('claude');
-    if (document.getElementById('visEngPerplexity').checked) engines.push('perplexity');
+    if (document.getElementById('visEngGemini').checked) engines.push('gemini');
     if (!engines.length) { alert('Select at least one engine.'); return; }
 
     const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
@@ -30313,7 +30833,7 @@ async function uwDelete(id){
     document.getElementById('visAdHocResults').innerHTML = '';
     document.getElementById('visAdHocStatus').textContent = '';
     document.getElementById('visEngChatgpt').checked = true;
-    document.getElementById('visEngPerplexity').checked = true;
+    document.getElementById('visEngGemini').checked = true;
     runAdHoc();
   }
 
@@ -30321,7 +30841,7 @@ async function uwDelete(id){
   async function runAllQueries() {
     const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
     if (!prop) return;
-    if (!confirm('Run all active queries for ' + prop.display_name + ' against ChatGPT and Perplexity? This may take a few minutes.')) return;
+    if (!confirm('Run all active queries for ' + prop.display_name + ' against ChatGPT, Claude, and Gemini? This may take a few minutes.')) return;
 
     const resultsDiv = document.getElementById('visRunAllResults');
     const body = document.getElementById('visRunAllBody');
@@ -30346,10 +30866,111 @@ async function uwDelete(id){
     }
   }
 
+  // ---- SEO Portfolio mode ----
+  let seoMode = 'property';
+  function setSeoMode(mode) {
+    seoMode = mode;
+    const isSingle = mode === 'property';
+    document.getElementById('visSeoSingleMode').style.display = isSingle ? '' : 'none';
+    document.getElementById('visSeoPortfolioMode').style.display = isSingle ? 'none' : '';
+    document.getElementById('visSeoSingleControls').style.display = isSingle ? '' : 'none';
+    const propBtn = document.getElementById('visGscModePropertyBtn');
+    const portBtn = document.getElementById('visGscModePortfolioBtn');
+    propBtn.style.background = isSingle ? '#1e293b' : 'transparent';
+    propBtn.style.color = isSingle ? '#fff' : '#6b7280';
+    propBtn.style.fontWeight = isSingle ? '600' : '400';
+    portBtn.style.background = isSingle ? 'transparent' : '#1e293b';
+    portBtn.style.color = isSingle ? '#6b7280' : '#fff';
+    portBtn.style.fontWeight = isSingle ? '400' : '600';
+    if (!isSingle) loadSeoPortfolioView();
+  }
+
+  async function loadSeoPortfolioView() {
+    const tbody = document.getElementById('visSeoPortfolioBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 14);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+
+      const [{ data: snapData, error }, { data: props }] = await Promise.all([
+        getSB().from('seo_snapshots')
+          .select('property_id, impressions, clicks, avg_position, ctr, captured_at')
+          .gt('impressions', 0)
+          .gte('captured_at', cutoffStr)
+          .order('captured_at', { ascending: false }),
+        getSB().from('properties').select('id, display_name'),
+      ]);
+      if (error) throw error;
+
+      // Aggregate 14 days per property
+      const agg = {};
+      (snapData || []).forEach(function(r) {
+        if (!agg[r.property_id]) agg[r.property_id] = { impressions: 0, clicks: 0, posSum: 0, posCount: 0 };
+        agg[r.property_id].impressions += (r.impressions || 0);
+        agg[r.property_id].clicks += (r.clicks || 0);
+        if (r.avg_position) { agg[r.property_id].posSum += r.avg_position; agg[r.property_id].posCount++; }
+      });
+
+      const propMap = {};
+      (props || []).forEach(function(p){ propMap[p.id] = p.display_name; });
+      const dataWithNames = Object.keys(agg).map(function(pid) {
+        const a = agg[pid];
+        const avgPos = a.posCount ? a.posSum / a.posCount : null;
+        const ctr = a.impressions > 0 ? a.clicks / a.impressions : null;
+        return { property_id: pid, property_name: propMap[pid] || 'Unknown', impressions: a.impressions, clicks: a.clicks, avg_position: avgPos, ctr: ctr };
+      });
+
+      if (!dataWithNames.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No GSC data yet</td></tr>';
+        return;
+      }
+
+      const rows = [...dataWithNames].sort(function(a,b){ return (b.impressions||0)-(a.impressions||0); });
+      const medals = ['🥇','🥈','🥉'];
+      const totalImp = rows.reduce(function(s,r){ return s+(r.impressions||0); }, 0);
+      const totalClk = rows.reduce(function(s,r){ return s+(r.clicks||0); }, 0);
+
+      document.getElementById('visSeoPortCount').textContent = rows.length;
+      document.getElementById('visSeoPortImpressions').textContent = fmtNum(totalImp);
+      document.getElementById('visSeoPortClicks').textContent = fmtNum(totalClk);
+
+      function posColor(p) {
+        if (!p) return 'var(--ink-faint)';
+        return p <= 5 ? 'var(--pos)' : p <= 15 ? 'var(--gold)' : 'var(--neg)';
+      }
+      function ctrColor(c) {
+        if (!c) return 'var(--ink-faint)';
+        return c >= 0.05 ? 'var(--pos)' : c >= 0.02 ? 'var(--gold)' : 'var(--neg)';
+      }
+
+      tbody.innerHTML = rows.map(function(r, i) {
+        const medal = medals[i] || '';
+        const name = r.property_name || 'Unknown';
+        const imp = r.impressions || 0;
+        const clk = r.clicks || 0;
+        const pos = r.avg_position;
+        const ctr = r.ctr;
+        const date = r.captured_at ? formatDate(r.captured_at) : '—';
+        return '<tr>' +
+          '<td class="l"><span style="margin-right:6px">' + medal + '</span>' + escHtml(name) + '</td>' +
+          '<td style="text-align:right">' + fmtNum(imp) + '</td>' +
+          '<td style="text-align:right">' + fmtNum(clk) + '</td>' +
+          '<td style="text-align:right;color:' + ctrColor(ctr) + '">' + (ctr ? (ctr*100).toFixed(1)+'%' : '—') + '</td>' +
+          '<td style="text-align:right;color:' + posColor(pos) + '">' + (pos ? pos.toFixed(1) : '—') + '</td>' +
+          '<td style="text-align:right;color:var(--ink-faint);font-size:11.5px">' + date + '</td>' +
+        '</tr>';
+      }).join('');
+    } catch(err) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty" style="color:var(--warn)">Error: ' + escHtml(err.message) + '</td></tr>';
+    }
+  }
+
   // ---- Expose to inline handlers ----
   window._vis = {
     onPropChange: function(val) { visSelectedId = val; loadSeoData(); loadAiPresence(); loadTrendChart(); loadQueryLibrary(); },
     setMode: setMode,
+    setSeoMode: setSeoMode,
     triggerSync: triggerSync,
     runAdHoc: runAdHoc,
     runAllQueries: runAllQueries,
@@ -30361,6 +30982,194 @@ async function uwDelete(id){
     deleteQuery: deleteQuery,
     toggleQuery: toggleQuery,
   };
+})();
+</script>
+<script>
+// ── PPC Approval Queue ──
+(function() {
+  const SB_URL = 'https://srxxgfgdckdeucyuhgrt.supabase.co';
+  const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyeHhnZmdkY2tkZXVjeXVoZ3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNTQ1OTEsImV4cCI6MjA5NDczMDU5MX0.Ap08AcjsqjpeEu0vl6WQkd49QUzN804m4J7-qqR7s7g';
+  let _sb = null;
+  function getSB() {
+    if (!_sb) _sb = supabase.createClient(SB_URL, SB_KEY);
+    return _sb;
+  }
+
+  let _allRecs = [];
+  let _propMap = {};
+
+  const REC_LABELS = {
+    ADD_NEGATIVE: 'Negative Keyword',
+    REALLOCATE_BUDGET: 'Budget Reallocation',
+    ADJUST_TCPA: 'Adjust tCPA',
+    TIGHTEN_GEO: 'Tighten Geo',
+    PAUSE_KEYWORD: 'Pause Keyword',
+  };
+
+  const CONF_COLOR = { HIGH: '#1a6b5a', MEDIUM: '#d97706', LOW: '#9ca3af' };
+
+  function fmtMicros(v) {
+    if (!v) return '—';
+    return '$' + (v / 1000000).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  function fmtDate(s) {
+    if (!s) return '—';
+    return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  async function load() {
+    // Fetch properties for name lookup
+    const { data: props } = await getSB().from('properties').select('id, display_name');
+    _propMap = {};
+    (props || []).forEach(function(p) { _propMap[p.id] = p.display_name; });
+
+    // Populate property filter
+    const sel = document.getElementById('ppcFilterProperty');
+    sel.innerHTML = '<option value="">All Properties</option>';
+    (props || []).forEach(function(p) {
+      sel.innerHTML += '<option value="' + p.id + '">' + escHtml(p.display_name) + '</option>';
+    });
+
+    // Fetch all recs
+    const { data: recs, error } = await getSB()
+      .from('ppc_recommendations')
+      .select('*')
+      .order('est_monthly_savings_micros', { ascending: false, nullsFirst: false });
+
+    if (error) {
+      document.getElementById('ppcRecsBody').innerHTML =
+        '<tr><td colspan="6" class="empty" style="color:#dc2626">Error: ' + escHtml(error.message) + '</td></tr>';
+      return;
+    }
+
+    _allRecs = recs || [];
+    render();
+  }
+
+  function render() {
+    const propFilter = document.getElementById('ppcFilterProperty').value;
+    const typeFilter = document.getElementById('ppcFilterType').value;
+
+    const pending = _allRecs.filter(function(r) {
+      return r.status === 'pending' &&
+        (!propFilter || r.property_id === propFilter) &&
+        (!typeFilter || r.rec_type === typeFilter);
+    });
+
+    const decided = _allRecs.filter(function(r) {
+      return r.status !== 'pending' &&
+        (!propFilter || r.property_id === propFilter) &&
+        (!typeFilter || r.rec_type === typeFilter);
+    });
+
+    // Summary tiles
+    const totalSavings = pending.reduce(function(s, r) { return s + (r.est_monthly_savings_micros || 0); }, 0);
+    const highConf = pending.filter(function(r) { return r.confidence === 'HIGH'; }).length;
+    const highNegs = pending.filter(function(r) { return r.confidence === 'HIGH' && r.rec_type === 'ADD_NEGATIVE'; }).length;
+
+    document.getElementById('ppcTilePending').textContent = pending.length;
+    document.getElementById('ppcTileSavings').textContent = fmtMicros(totalSavings);
+    document.getElementById('ppcTileHigh').textContent = highConf;
+    document.getElementById('ppcBulkBtn').style.display = highNegs > 0 ? '' : 'none';
+
+    // Pending table
+    const tbody = document.getElementById('ppcRecsBody');
+    if (!pending.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No pending recommendations' +
+        (_allRecs.length ? ' matching current filters' : ' — run the engine once data is ingested') + '</td></tr>';
+    } else {
+      tbody.innerHTML = pending.map(function(r) {
+        const propName = _propMap[r.property_id] || '—';
+        const label = REC_LABELS[r.rec_type] || r.rec_type;
+        const conf = r.confidence || '—';
+        const confColor = CONF_COLOR[conf] || '#9ca3af';
+        return '<tr>' +
+          '<td class="l" style="font-weight:500">' + escHtml(propName) + '</td>' +
+          '<td><span style="font-size:11px;font-weight:600;color:#1e293b;background:#f1f5f9;padding:2px 7px;border-radius:4px;white-space:nowrap">' + escHtml(label) + '</span></td>' +
+          '<td style="max-width:340px;font-size:12px;color:#374151;line-height:1.5">' + escHtml(r.rationale || '—') + '</td>' +
+          '<td style="text-align:center"><span style="font-size:11px;font-weight:700;color:' + confColor + '">' + conf + '</span></td>' +
+          '<td style="text-align:right;font-weight:600">' + fmtMicros(r.est_monthly_savings_micros) + '</td>' +
+          '<td style="text-align:right">' +
+            '<button class="btn sm" style="background:#1a6b5a;color:#fff;margin-right:6px" onclick="_ppc.decide(\'' + r.id + '\',\'approved\')">Approve</button>' +
+            '<button class="btn ghost sm" style="color:#dc2626;border-color:#fca5a5" onclick="_ppc.decide(\'' + r.id + '\',\'rejected\')">Reject</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    // History table
+    const hbody = document.getElementById('ppcHistoryBody');
+    if (!decided.length) {
+      hbody.innerHTML = '<tr><td colspan="6" class="empty">No decisions yet</td></tr>';
+    } else {
+      const STATUS_STYLE = {
+        approved: 'color:#1a6b5a;font-weight:700',
+        rejected: 'color:#dc2626;font-weight:700',
+        pushed: 'color:#1d4ed8;font-weight:700',
+        push_failed: 'color:#dc2626;font-weight:700',
+      };
+      hbody.innerHTML = decided.slice(0, 50).map(function(r) {
+        const propName = _propMap[r.property_id] || '—';
+        const label = REC_LABELS[r.rec_type] || r.rec_type;
+        const st = r.status || '—';
+        return '<tr>' +
+          '<td class="l">' + escHtml(propName) + '</td>' +
+          '<td><span style="font-size:11px;font-weight:600;color:#1e293b;background:#f1f5f9;padding:2px 7px;border-radius:4px">' + escHtml(label) + '</span></td>' +
+          '<td style="max-width:280px;font-size:12px;color:#6b7280">' + escHtml(r.rationale || '—') + '</td>' +
+          '<td style="text-align:center;font-size:12px;' + (STATUS_STYLE[st] || '') + '">' + st + '</td>' +
+          '<td style="text-align:right">' + fmtMicros(r.est_monthly_savings_micros) + '</td>' +
+          '<td style="text-align:right;font-size:12px;color:#9ca3af">' + fmtDate(r.decided_at) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  }
+
+  async function decide(id, status) {
+    const label = status === 'approved' ? 'Approve' : 'Reject';
+    if (!confirm(label + ' this recommendation?')) return;
+
+    const { data: { user } } = await getSB().auth.getUser();
+    const { error } = await getSB()
+      .from('ppc_recommendations')
+      .update({ status: status, decided_at: new Date().toISOString(), decided_by: user?.id || null })
+      .eq('id', id);
+
+    if (error) { alert('Error: ' + error.message); return; }
+
+    // Update local state and re-render without a full reload
+    const rec = _allRecs.find(function(r) { return r.id === id; });
+    if (rec) { rec.status = status; rec.decided_at = new Date().toISOString(); }
+    render();
+  }
+
+  async function bulkApproveNegatives() {
+    const pending = _allRecs.filter(function(r) {
+      return r.status === 'pending' && r.confidence === 'HIGH' && r.rec_type === 'ADD_NEGATIVE';
+    });
+    if (!pending.length) return;
+    if (!confirm('Approve ' + pending.length + ' HIGH-confidence negative keyword recommendations?')) return;
+
+    const { data: { user } } = await getSB().auth.getUser();
+    const ids = pending.map(function(r) { return r.id; });
+    const { error } = await getSB()
+      .from('ppc_recommendations')
+      .update({ status: 'approved', decided_at: new Date().toISOString(), decided_by: user?.id || null })
+      .in('id', ids);
+
+    if (error) { alert('Error: ' + error.message); return; }
+    pending.forEach(function(r) { r.status = 'approved'; r.decided_at = new Date().toISOString(); });
+    render();
+  }
+
+  function filter() { render(); }
+
+  // Load when Visibility tab is opened
+  document.querySelectorAll('.tab[data-tab="visibility"]').forEach(function(btn) {
+    btn.addEventListener('click', function() { setTimeout(load, 100); });
+  });
+
+  window._ppc = { decide: decide, filter: filter, bulkApproveNegatives: bulkApproveNegatives };
 })();
 </script>
 <script>
@@ -30458,6 +31267,173 @@ async function uwDelete(id){
   }
 
   window.docStore = { showSavePanel, save };
+})();
+</script>
+<script>
+// ── Underwriting tab switcher ──────────────────────────────────────────
+function uwShowTab(tab) {
+  document.getElementById('uwTabDeals').style.display = tab === 'deals' ? '' : 'none';
+  document.getElementById('uwTabOZ').style.display    = tab === 'oz'    ? '' : 'none';
+  const ACTIVE   = 'padding:8px 18px;border:none;background:transparent;font-size:13px;font-weight:700;color:#1e293b;border-bottom:2px solid #1e293b;cursor:pointer;margin-bottom:-2px';
+  const INACTIVE = 'padding:8px 18px;border:none;background:transparent;font-size:13px;font-weight:400;color:#6b7280;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px';
+  document.getElementById('uwTab-deals').style.cssText = tab === 'deals' ? ACTIVE : INACTIVE;
+  document.getElementById('uwTab-oz').style.cssText    = tab === 'oz'    ? ACTIVE : INACTIVE;
+  if (tab === 'oz') ozInit();
+}
+
+// ── OZ Substantial Improvement Model ─────────────────────────────────
+(function(){
+  const NAVY='#0f2340', TEAL='#1a6b5a', BORDER='#dde3ec';
+
+  const state = {
+    purchasePrice:30_000_000, landValue:3_000_000, bonusPct:0.20,
+    capRate:0.06, ltc:0.60, interestRate:0.055,
+    taxRate:0.01, insurance:100_000, renovMonths:30, txCostPct:0.02,
+  };
+
+  const SLIDERS = [
+    {id:'ozsl-pp',  key:'purchasePrice', label:'Purchase Price',              min:5e6,   max:100e6, step:5e5,    fmt:v=>'$'+(v/1e6).toFixed(1)+'M'},
+    {id:'ozsl-lv',  key:'landValue',     label:'Land Value',                  min:5e5,   max:15e6,  step:25e4,   fmt:v=>'$'+(v/1e6).toFixed(2)+'M'},
+    {id:'ozsl-cr',  key:'capRate',       label:'Going-In Cap Rate',           min:0.03,  max:0.10,  step:0.0025, fmt:v=>pc(v)},
+    {id:'ozsl-tx',  key:'txCostPct',     label:'Transaction Costs (% of PP)', min:0,     max:0.03,  step:0.0025, fmt:v=>pc(v)},
+    {id:'ozsl-bp',  key:'bonusPct',      label:'Bonus Dep. % of Depreciable', min:0,     max:1,     step:0.05,   fmt:v=>pc(v,0)},
+    {id:'ozsl-ltc', key:'ltc',           label:'LTC',                         min:0.40,  max:0.80,  step:0.01,   fmt:v=>pc(v,0)},
+    {id:'ozsl-ir',  key:'interestRate',  label:'Interest Rate',               min:0.03,  max:0.10,  step:0.0025, fmt:v=>pc(v)},
+    {id:'ozsl-tr',  key:'taxRate',       label:'RE Tax Rate (% of PP)',       min:0.005, max:0.03,  step:0.001,  fmt:v=>pc(v)},
+    {id:'ozsl-ins', key:'insurance',     label:'Annual Insurance',            min:25e3,  max:5e5,   step:5e3,    fmt:v=>'$'+(v/1e3).toFixed(0)+'K'},
+    {id:'ozsl-rm',  key:'renovMonths',   label:'Renovation Period (months)',  min:6,     max:60,    step:6,      fmt:v=>v+' mo'},
+  ];
+
+  function d$(n,dec=0){
+    const s=Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+    return n<0?'($'+s+')':'$'+s;
+  }
+  function pc(n,dec=1){return(n*100).toFixed(dec)+'%';}
+
+  let built=false;
+  function buildSliders(){
+    if(built) return;
+    built=true;
+    SLIDERS.forEach(s=>{
+      const el=document.getElementById(s.id);
+      if(!el) return;
+      el.innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:11px;color:#555;font-family:monospace">${s.label}</span>
+        <span id="${s.id}-val" style="font-size:11px;font-weight:700;color:${NAVY};font-family:monospace"></span>
+      </div>
+      <input type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${state[s.key]}"
+        style="width:100%;accent-color:${TEAL};cursor:pointer;margin-bottom:10px"
+        oninput="ozUpdate('${s.key}',+this.value)">`;
+    });
+  }
+
+  function calc(){
+    const {purchasePrice:pp,landValue:lv,bonusPct:bp,capRate:cr,ltc,interestRate:ir,
+           taxRate:tr,insurance:ins,renovMonths:rm,txCostPct:txp}=state;
+    const txCosts=pp*txp;
+    const txCap=txCosts*((pp-lv)/pp);
+    const txLand=txCosts*(lv/pp);
+    const depAtAcq=pp-lv;
+    const bonusDep=depAtAcq*bp;
+    const startBasis=pp-bonusDep;
+    const noi=pp*cr;
+    const loan=pp*ltc;
+    const equity=pp-loan;
+    const yrs=rm/12;
+    const capInt=loan*ir*yrs;
+    const capTax=pp*tr*yrs;
+    const capIns=ins*yrs;
+    const totalCarry=capInt+capTax+capIns;
+    const required=startBasis*0.50;
+    const softAdd=txCap+totalCarry;
+    const hardNeeded=Math.max(0,required-softAdd);
+    const totalAdd=softAdd+hardNeeded;
+    const surplus=totalAdd-required;
+    const finalBasis=startBasis+totalAdd;
+    return {pp,lv,bp,cr,ltc,ir,tr,ins,rm,txp,
+      txCosts,txCap,txLand,depAtAcq,bonusDep,startBasis,
+      noi,loan,equity,yrs,capInt,capTax,capIns,totalCarry,
+      required,softAdd,hardNeeded,totalAdd,surplus,finalBasis,
+      softPct:softAdd/required, carryPct:totalCarry/required, txPct:txCap/required};
+  }
+
+  function row(label,value,opts={}){
+    const {sub='',bold=false,highlight=false,indent=false,borderTop=false}=opts;
+    const disp=typeof value==='number'?d$(value):value;
+    const vc=typeof value==='number'&&value<0?'#c0392b':(highlight?TEAL:NAVY);
+    return `<tr style="background:${highlight?'#e8f4f0':'transparent'};${borderTop?`border-top:2px solid ${NAVY}`:''}">
+      <td style="padding:5px 10px 5px ${indent?'22px':'10px'};font-size:11.5px;color:${bold?NAVY:'#333'};font-weight:${bold?700:400};border-bottom:1px solid ${BORDER}">
+        ${label}${sub?`<div style="font-size:9.5px;color:#888;font-weight:400;margin-top:1px">${sub}</div>`:''}
+      </td>
+      <td style="padding:5px 10px;text-align:right;font-size:11.5px;font-weight:${bold?700:400};color:${vc};border-bottom:1px solid ${BORDER};font-family:monospace;white-space:nowrap">${disp}</td>
+    </tr>`;
+  }
+
+  function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+  function setHtml(id,v){const e=document.getElementById(id);if(e)e.innerHTML=v;}
+
+  function render(){
+    const m=calc();
+    SLIDERS.forEach(s=>{const e=document.getElementById(s.id+'-val');if(e)e.textContent=s.fmt(state[s.key]);});
+    setText('oz-req',d$(m.required));
+    setText('oz-soft',d$(m.softAdd));
+    setText('oz-soft-sub',pc(m.softPct)+' of threshold');
+    setText('oz-hard',d$(m.hardNeeded));
+    const hb=document.getElementById('oz-hard-badge');
+    if(hb) hb.style.background=m.hardNeeded<m.required*0.85?'#1a5276':'#7d3c1a';
+    setText('oz-equity',d$(m.equity+m.txCosts));
+
+    setHtml('oz-tbl-acq',`<tbody>
+      ${row('Purchase Price',m.pp,{bold:true})}
+      ${row('Less: Land Value',-m.lv,{indent:true,sub:'Not eligible for bonus dep.'})}
+      ${row('Depreciable Basis (PP)',m.depAtAcq,{bold:true})}
+      ${row(`Less: Bonus Depreciation (${pc(m.bp,0)})`,-m.bonusDep,{indent:true,sub:'Year 1, before improvement period'})}
+      ${row('Starting Basis — SI Test Denominator',m.startBasis,{bold:true,highlight:true,sub:'Purchase price less bonus dep; tx costs excluded (count as additions)'})}
+    </tbody>`);
+
+    setHtml('oz-tbl-fin',`<tbody>
+      ${row('Going-In NOI',m.noi,{sub:`${pc(m.cr)} cap × $${(m.pp/1e6).toFixed(1)}M`})}
+      ${row('Loan Amount',m.loan,{sub:`${pc(m.ltc,0)} LTC on purchase price`})}
+      ${row('Equity (Purchase Price − Loan)',m.equity)}
+      ${row('Transaction Costs (Cash)',m.txCosts,{indent:true,sub:'Funded from equity at close'})}
+      ${row('Total Equity at Close',m.equity+m.txCosts,{bold:true})}
+      ${row('Annual Debt Service (Interest Only)',m.loan*m.ir,{sub:`${pc(m.ir)} × loan`})}
+    </tbody>`);
+
+    setHtml('oz-tbl-add',`<tbody>
+      ${row('Transaction Costs (Depreciable Portion)',m.txCap,{bold:true,sub:`${pc(m.txp)} × $${(m.pp/1e6).toFixed(1)}M PP × ${pc((m.pp-m.lv)/m.pp,0)} depreciable`})}
+      ${row('Land-Allocable Tx Costs',m.txLand,{indent:true,sub:'Added to basis but non-depreciable; excluded from SI test additions'})}
+      ${row('§266 Capitalized Interest',m.capInt,{indent:true,sub:`$${(m.loan/1e6).toFixed(1)}M × ${pc(m.ir)} × ${m.yrs.toFixed(2)} yrs`})}
+      ${row('§266 Capitalized RE Taxes',m.capTax,{indent:true,sub:`${pc(m.tr)} × $${(m.pp/1e6).toFixed(1)}M PP × ${m.yrs.toFixed(2)} yrs`})}
+      ${row('§266 Capitalized Insurance',m.capIns,{indent:true,sub:`$${(m.ins/1e3).toFixed(0)}K/yr × ${m.yrs.toFixed(2)} yrs`})}
+      ${row('Total Soft Additions (Tx Costs + Carry)',m.softAdd,{bold:true,highlight:true})}
+      ${row('  — Tx Costs as % of Threshold',pc(m.txPct),{indent:true})}
+      ${row('  — §266 Carry as % of Threshold',pc(m.carryPct),{indent:true})}
+      ${row('  — Combined Soft Offset',pc(m.softPct),{bold:true})}
+    </tbody>`);
+
+    setHtml('oz-tbl-si',`<tbody>
+      ${row('Starting Basis (SI Test Denominator)',m.startBasis,{bold:true,sub:'Purchase price less bonus dep'})}
+      ${row('Required Additions to Basis (50%)',m.required,{bold:true,sub:'Rural OZ: 50% vs. 100% for standard OZ'})}
+      ${row('Less: Tx Cost Additions (Depreciable)',-m.txCap,{indent:true})}
+      ${row('Less: §266 Carry Capitalized',-m.totalCarry,{indent:true})}
+      ${row('Hard CapEx Required to Clear Test',m.hardNeeded,{bold:true,highlight:true,sub:'Minimum renovation spend needed after all soft offsets'})}
+      ${row('Total Additions (Tx Costs + Carry + Hard CapEx)',m.totalAdd,{bold:true,borderTop:true})}
+      ${row('Surplus / (Shortfall) vs. Threshold',m.surplus,{bold:true,highlight:true,sub:'Should be ≥ $0 to satisfy test'})}
+      ${row('All-In Adjusted Basis After Improvements',m.finalBasis,{bold:true})}
+    </tbody>`);
+
+    setHtml('oz-insight',`<span style="font-size:10px;font-weight:700;color:${TEAL}">KEY INSIGHT</span><br>
+      Soft additions (tx costs + §266 carry) offset <strong>${pc(m.softPct)}</strong> of the ${d$(m.required)} threshold —
+      tx costs contribute <strong>${pc(m.txPct)}</strong> and carry <strong>${pc(m.carryPct)}</strong> —
+      reducing hard CapEx needed to <strong>${d$(m.hardNeeded)}</strong>.
+      ${m.softPct>=0.10
+        ? ' Combined soft offsets are meaningful — particularly valuable on tight renovation budgets or distressed acquisitions.'
+        : ' Soft offset is modest; consider higher LTC, longer renovation period, or higher tx cost assumption.'}`);
+  }
+
+  window.ozUpdate=function(key,val){state[key]=val;render();};
+  window.ozInit=function(){buildSliders();render();};
 })();
 </script>
 </body>

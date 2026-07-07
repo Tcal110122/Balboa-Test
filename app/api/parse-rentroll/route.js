@@ -3,12 +3,16 @@ import { parseRentRoll } from '@/lib/rentroll-parser'
 import { parseOneSiteRR } from '@/lib/onesite-rr-parser'
 import { parseEntrataRR } from '@/lib/entrata-rr-parser'
 import { parseYardiDetailRR } from '@/lib/yardidetail-rr-parser'
+import { parseRealPageBIRR } from '@/lib/realpage-bi-rr-parser'
 import * as XLSX from 'xlsx'
-import supabase from '@/lib/supabase'
-import { requireAuth, canAccessDeal } from '@/lib/auth'
+import { requireAuth, canAccessDeal, userClient } from '@/lib/auth'
 
 function detectFormat(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 20 })
+
+  // RealPage BI export: has a "Rent Roll Detail" sheet
+  if (wb.SheetNames.some(n => /rent roll detail/i.test(n))) return 'realpage-bi'
+
   const ws = wb.Sheets[wb.SheetNames[0]]
   const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
 
@@ -55,6 +59,7 @@ export async function POST(request) {
     const parsed = format === 'onesite'      ? parseOneSiteRR(buffer)
                  : format === 'entrata'      ? parseEntrataRR(buffer)
                  : format === 'yardidetail'  ? parseYardiDetailRR(buffer)
+                 : format === 'realpage-bi'  ? parseRealPageBIRR(buffer)
                  : parseRentRoll(buffer)
 
     if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
@@ -65,7 +70,8 @@ export async function POST(request) {
       )
     }
 
-    const { error } = await supabase
+    const db = userClient(request)
+    const { error } = await db
       .from('rent_roll_snapshots')
       .upsert(
         { deal_id: dealId, as_of_date: parsed.asOf, units: parsed.units },

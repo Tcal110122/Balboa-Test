@@ -632,6 +632,7 @@
           <select id="visPropSelect" onchange="_vis.onPropChange(this.value)" style="min-width:220px"></select>
         </label>
         <button class="btn ghost" id="visSyncBtn" onclick="_vis.triggerSync()">Sync Now</button>
+        <button class="btn ghost" id="visBackfillBtn" onclick="_vis.triggerSync(30)" style="margin-left:6px">Backfill 30 Days</button>
       </div>
       <div style="display:flex;border:1px solid var(--line-soft);border-radius:6px;overflow:hidden;font-size:12px">
         <button id="visGscModePropertyBtn" onclick="_vis.setSeoMode('property')" style="padding:5px 14px;border:none;cursor:pointer;background:#1e293b;color:#fff;font-size:12px;font-weight:600">Single Property</button>
@@ -30394,31 +30395,41 @@ async function uwDelete(id){
   }
 
   // ---- Manual sync ----
-  async function triggerSync() {
-    const btn = document.getElementById('visSyncBtn');
-    btn.disabled = true;
-    btn.textContent = 'Syncing…';
-    setVisStatus('Requesting sync from Google Search Console…');
+  async function triggerSync(lookbackDays) {
+    const isBackfill = lookbackDays && lookbackDays > 3;
+    const syncBtn = document.getElementById('visSyncBtn');
+    const backfillBtn = document.getElementById('visBackfillBtn');
+    if (syncBtn) { syncBtn.disabled = true; }
+    if (backfillBtn) { backfillBtn.disabled = true; }
+    if (isBackfill) {
+      if (backfillBtn) backfillBtn.textContent = 'Backfilling…';
+      setVisStatus('Backfilling ' + lookbackDays + ' days from Google Search Console — this may take 30–60 seconds…');
+    } else {
+      if (syncBtn) syncBtn.textContent = 'Syncing…';
+      setVisStatus('Requesting sync from Google Search Console…');
+    }
     try {
+      const body = lookbackDays ? { lookbackDays } : {};
       const resp = await fetch(SYNC_FUNCTION_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
         },
+        body: JSON.stringify(body),
       });
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
         setVisStatus('Sync failed: ' + (data.error || JSON.stringify(data)), true);
       } else {
-        setVisStatus('Sync complete for ' + (data.date || 'yesterday') + '. Reloading data…');
+        setVisStatus('Sync complete' + (data.date ? ' through ' + data.date : '') + '. Reloading data…');
         setTimeout(loadSeoData, 1500);
       }
     } catch(err) {
       setVisStatus('Sync error: ' + err.message, true);
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Sync Now';
+      if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = 'Sync Now'; }
+      if (backfillBtn) { backfillBtn.disabled = false; backfillBtn.textContent = 'Backfill 30 Days'; }
     }
   }
 

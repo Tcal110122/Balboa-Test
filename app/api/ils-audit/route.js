@@ -5,33 +5,23 @@ import { requireAuth } from '@/lib/auth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const FETCH_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-}
-
+// Jina AI reader renders JavaScript-heavy pages and returns clean markdown
 async function fetchPageText(url) {
   if (!url) return null
   try {
-    const resp = await fetch(url, {
-      headers: FETCH_HEADERS,
-      signal: AbortSignal.timeout(15000),
-      redirect: 'follow',
+    const jinaUrl = 'https://r.jina.ai/' + url
+    const resp = await fetch(jinaUrl, {
+      headers: {
+        'Accept': 'text/plain',
+        'X-Return-Format': 'text',
+      },
+      signal: AbortSignal.timeout(30000),
     })
     if (!resp.ok) return { error: `HTTP ${resp.status}` }
-    const html = await resp.text()
-    // Strip scripts, styles, then all tags
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 9000)
+    const text = (await resp.text()).slice(0, 10000)
     return { text }
   } catch (err) {
-    return { error: err.message?.includes('timeout') ? 'Timeout' : 'Fetch blocked' }
+    return { error: err.message?.includes('timeout') ? 'Timeout' : 'Fetch failed' }
   }
 }
 

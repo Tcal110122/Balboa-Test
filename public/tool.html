@@ -784,6 +784,43 @@
       </div>
     </div>
 
+    <!-- ILS Audit -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-hd">
+        <h2>ILS Audit</h2>
+        <span class="note">Listing accuracy · Apartments.com, Zillow, Apartment List</span>
+        <div class="grow"></div>
+        <button class="btn ghost" id="visIlsRunBtn" onclick="_vis.runIlsAudit()" style="font-size:12px">Run Audit</button>
+      </div>
+      <div class="card-bd" style="padding:14px 18px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:12px">
+          <label class="fld">
+            <span>Property Website</span>
+            <input type="url" id="visIlsWebsite" placeholder="https://yourproperty.com" style="font-size:12px">
+          </label>
+          <label class="fld">
+            <span>Apartments.com Listing</span>
+            <input type="url" id="visIlsApartments" placeholder="https://www.apartments.com/..." style="font-size:12px">
+          </label>
+          <label class="fld">
+            <span>Zillow Listing</span>
+            <input type="url" id="visIlsZillow" placeholder="https://www.zillow.com/..." style="font-size:12px">
+          </label>
+          <label class="fld">
+            <span>Apartment List</span>
+            <input type="url" id="visIlsAptList" placeholder="https://www.apartmentlist.com/..." style="font-size:12px">
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+          <button class="btn ghost" onclick="_vis.saveIlsUrls()" style="font-size:12px">Save URLs</button>
+          <span id="visIlsSaveStatus" style="font-size:11.5px;color:var(--ink-faint)"></span>
+        </div>
+        <div id="visIlsAuditStatus" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px;display:none"></div>
+        <div id="visIlsResults" style="display:none"></div>
+        <div id="visIlsEmpty" style="font-size:12px;color:var(--ink-faint)">Enter listing URLs above and click Run Audit to check for pricing, specials, and availability discrepancies.</div>
+      </div>
+    </div>
+
     </div><!-- /visSeoSingleMode -->
 
     <!-- ── PORTFOLIO VIEW MODE ── -->
@@ -30056,7 +30093,7 @@ async function uwDelete(id){
     setVisStatus('Loading properties…');
     const { data, error } = await getSB()
       .from('properties')
-      .select('id, slug, display_name, city, state, gsc_site_url')
+      .select('id, slug, display_name, city, state, gsc_site_url, ils_urls')
       .order('display_name');
 
     if (error) { setVisStatus('Error loading properties: ' + error.message, true); return; }
@@ -30979,7 +31016,7 @@ async function uwDelete(id){
 
   // ---- Expose to inline handlers ----
   window._vis = {
-    onPropChange: function(val) { visSelectedId = val; loadSeoData(); loadAiPresence(); loadTrendChart(); loadQueryLibrary(); },
+    onPropChange: function(val) { visSelectedId = val; loadSeoData(); loadAiPresence(); loadTrendChart(); loadQueryLibrary(); loadIlsData(); },
     setMode: setMode,
     setSeoMode: setSeoMode,
     triggerSync: triggerSync,
@@ -30992,7 +31029,201 @@ async function uwDelete(id){
     saveQuery: saveQuery,
     deleteQuery: deleteQuery,
     toggleQuery: toggleQuery,
+    saveIlsUrls: saveIlsUrls,
+    runIlsAudit: runIlsAudit,
   };
+
+  // ---- ILS Audit ----
+  function loadIlsData() {
+    const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+    if (!prop) return;
+    const urls = prop.ils_urls || {};
+    document.getElementById('visIlsWebsite').value = urls.website || prop.gsc_site_url || '';
+    document.getElementById('visIlsApartments').value = urls.apartments_com || '';
+    document.getElementById('visIlsZillow').value = urls.zillow || '';
+    document.getElementById('visIlsAptList').value = urls.apartment_list || '';
+    document.getElementById('visIlsResults').style.display = 'none';
+    document.getElementById('visIlsResults').innerHTML = '';
+    document.getElementById('visIlsEmpty').style.display = '';
+    document.getElementById('visIlsAuditStatus').style.display = 'none';
+    document.getElementById('visIlsSaveStatus').textContent = '';
+  }
+
+  async function saveIlsUrls() {
+    if (!visSelectedId) return;
+    const ils_urls = {
+      website:        document.getElementById('visIlsWebsite').value.trim() || null,
+      apartments_com: document.getElementById('visIlsApartments').value.trim() || null,
+      zillow:         document.getElementById('visIlsZillow').value.trim() || null,
+      apartment_list: document.getElementById('visIlsAptList').value.trim() || null,
+    };
+    const statusEl = document.getElementById('visIlsSaveStatus');
+    statusEl.textContent = 'Saving…';
+    try {
+      const resp = await fetch('/api/ils-audit', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property_id: visSelectedId, ils_urls }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { statusEl.textContent = 'Error: ' + (data.error || resp.status); return; }
+      // Update local cache so property switch reloads correctly
+      const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+      if (prop) prop.ils_urls = ils_urls;
+      statusEl.textContent = 'Saved ✓';
+      setTimeout(function() { statusEl.textContent = ''; }, 3000);
+    } catch(err) {
+      statusEl.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  async function runIlsAudit() {
+    if (!visSelectedId) return;
+    const btn = document.getElementById('visIlsRunBtn');
+    const statusEl = document.getElementById('visIlsAuditStatus');
+    const resultsEl = document.getElementById('visIlsResults');
+    const emptyEl = document.getElementById('visIlsEmpty');
+    btn.disabled = true;
+    btn.textContent = 'Auditing…';
+    statusEl.style.display = '';
+    statusEl.style.color = 'var(--ink-faint)';
+    statusEl.textContent = 'Fetching pages and extracting listing data — this takes ~20 seconds…';
+    emptyEl.style.display = 'none';
+    resultsEl.style.display = 'none';
+    try {
+      const resp = await fetch('/api/ils-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property_id: visSelectedId }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        statusEl.style.color = 'var(--warn)';
+        statusEl.textContent = 'Audit failed: ' + (data.error || resp.status);
+        return;
+      }
+      statusEl.style.display = 'none';
+      renderIlsResults(data);
+    } catch(err) {
+      statusEl.style.color = 'var(--warn)';
+      statusEl.textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Run Audit';
+    }
+  }
+
+  function renderIlsResults(data) {
+    const resultsEl = document.getElementById('visIlsResults');
+    const platforms = ['website', 'apartments_com', 'zillow', 'apartment_list'];
+    const r = data.results;
+
+    // Count total flags across all ILS platforms
+    let totalFlags = 0;
+    platforms.slice(1).forEach(function(p) {
+      if (r[p] && r[p].flags) totalFlags += r[p].flags.length;
+    });
+
+    const summaryColor = totalFlags === 0 ? '#15803d' : totalFlags <= 2 ? '#b45309' : '#dc2626';
+    const summaryText = totalFlags === 0 ? '✓ No issues found' : totalFlags + ' issue' + (totalFlags > 1 ? 's' : '') + ' found';
+
+    let html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+      + '<span style="font-size:13px;font-weight:600;color:' + summaryColor + '">' + escHtml(summaryText) + '</span>'
+      + '<span style="font-size:11.5px;color:var(--ink-faint)">· Audited ' + escHtml(data.property) + '</span>'
+      + '</div>';
+
+    // Comparison grid
+    html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--line-soft);color:var(--ink-faint);font-weight:600;white-space:nowrap">Data Point</th>';
+    platforms.forEach(function(p) {
+      const d = r[p];
+      const isSource = p === 'website';
+      html += '<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--line-soft);color:var(--ink-faint);font-weight:600;white-space:nowrap">'
+        + escHtml(d ? d.label : p) + (isSource ? ' <span style="color:#6b7280;font-weight:400">(source)</span>' : '') + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    function row(label, fn) {
+      html += '<tr>';
+      html += '<td style="padding:7px 10px;border-bottom:1px solid var(--line-soft);color:var(--ink-faint);font-weight:500;white-space:nowrap">' + escHtml(label) + '</td>';
+      platforms.forEach(function(p) { html += fn(r[p], p); });
+      html += '</tr>';
+    }
+
+    function cell(content, highlight) {
+      const bg = highlight === 'high' ? 'rgba(220,38,38,.08)' : highlight === 'medium' ? 'rgba(180,83,9,.07)' : '';
+      return '<td style="padding:7px 10px;border-bottom:1px solid var(--line-soft);' + (bg ? 'background:' + bg + ';' : '') + '">' + content + '</td>';
+    }
+
+    function fmtRent(d) {
+      if (!d || d.skipped) return '<span style="color:var(--ink-faint)">—</span>';
+      if (d.error) return '<span style="color:var(--warn);font-size:11px">' + escHtml(d.error) + '</span>';
+      if (d.not_a_listing) return '<span style="color:var(--ink-faint);font-size:11px">Not found</span>';
+      if (d.parse_error) return '<span style="color:var(--warn);font-size:11px">Parse error</span>';
+      if (!d.starting_rent) return '<span style="color:var(--ink-faint)">—</span>';
+      const max = d.max_rent && d.max_rent !== d.starting_rent ? '–$' + d.max_rent.toLocaleString() : '';
+      return '$' + d.starting_rent.toLocaleString() + max;
+    }
+
+    row('Starting Rent', function(d, p) {
+      const flag = d && d.flags && d.flags.find(function(f) { return f.type === 'price_low' || f.type === 'price_high' || f.type === 'no_price'; });
+      return cell(fmtRent(d), flag ? flag.severity : null);
+    });
+
+    row('Specials / Concessions', function(d) {
+      if (!d || d.skipped) return cell('<span style="color:var(--ink-faint)">—</span>');
+      if (d.error || d.not_a_listing || d.parse_error) return cell('<span style="color:var(--ink-faint)">—</span>');
+      const flag = d.flags && d.flags.find(function(f) { return f.type === 'missing_special'; });
+      const text = d.specials ? escHtml(d.specials) : '<span style="color:var(--ink-faint)">None listed</span>';
+      return cell(text, flag ? flag.severity : null);
+    });
+
+    row('Available Units', function(d) {
+      if (!d || d.skipped) return cell('<span style="color:var(--ink-faint)">—</span>');
+      if (d.error || d.not_a_listing || d.parse_error) return cell('<span style="color:var(--ink-faint)">—</span>');
+      return cell(d.available_units != null ? d.available_units : '<span style="color:var(--ink-faint)">—</span>');
+    });
+
+    row('Floor Plans', function(d) {
+      if (!d || d.skipped) return cell('<span style="color:var(--ink-faint)">—</span>');
+      if (d.error || d.not_a_listing || d.parse_error) return cell('<span style="color:var(--ink-faint)">—</span>');
+      if (!d.floor_plans || !d.floor_plans.length) return cell('<span style="color:var(--ink-faint)">—</span>');
+      const items = d.floor_plans.slice(0, 4).map(function(fp) {
+        const price = fp.rent_min ? '$' + fp.rent_min.toLocaleString() + (fp.rent_max && fp.rent_max !== fp.rent_min ? '–$' + fp.rent_max.toLocaleString() : '') : '';
+        return '<div style="font-size:11px;line-height:1.5">' + escHtml(fp.type || '') + (price ? ' · ' + price : '') + '</div>';
+      }).join('');
+      return cell(items + (d.floor_plans.length > 4 ? '<div style="font-size:11px;color:var(--ink-faint)">+' + (d.floor_plans.length - 4) + ' more</div>' : ''));
+    });
+
+    row('Phone', function(d) {
+      if (!d || d.skipped) return cell('<span style="color:var(--ink-faint)">—</span>');
+      if (d.error || d.not_a_listing || d.parse_error) return cell('<span style="color:var(--ink-faint)">—</span>');
+      return cell(d.phone ? escHtml(d.phone) : '<span style="color:var(--ink-faint)">—</span>');
+    });
+
+    html += '</tbody></table></div>';
+
+    // Issues list
+    const allFlags = [];
+    platforms.slice(1).forEach(function(p) {
+      if (r[p] && r[p].flags) r[p].flags.forEach(function(f) { allFlags.push({ platform: r[p].label, ...f }); });
+    });
+    if (allFlags.length) {
+      html += '<div style="margin-top:14px;padding:10px 14px;background:rgba(220,38,38,.06);border-radius:6px;border:1px solid rgba(220,38,38,.15)">';
+      html += '<div style="font-size:11.5px;font-weight:700;color:#dc2626;margin-bottom:6px">Issues</div>';
+      allFlags.forEach(function(f) {
+        const color = f.severity === 'high' ? '#dc2626' : '#b45309';
+        html += '<div style="font-size:11.5px;color:' + color + ';margin-bottom:3px">· <strong>' + escHtml(f.platform) + '</strong>: ' + escHtml(f.msg) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    resultsEl.innerHTML = html;
+    resultsEl.style.display = '';
+    document.getElementById('visIlsEmpty').style.display = 'none';
+  }
+
 })();
 </script>
 <script>

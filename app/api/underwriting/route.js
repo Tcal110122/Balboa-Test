@@ -127,6 +127,32 @@ export async function POST(request) {
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Archive raw file to Storage
+    const storagePath = `underwriting/${data.id}/${file.name}`
+    await admin.storage.from('documents').upload(storagePath, buffer, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: true,
+    })
+    await admin.from('underwriting_deals').update({ storage_path: storagePath }).eq('id', data.id)
+
+    // Mirror into documents table for unified history view
+    await admin.from('documents').insert({
+      doc_type:     'underwriting_t12',
+      filename:     file.name,
+      storage_path: storagePath,
+      period_date:  parsed?.period ? new Date(parsed.period).toISOString().slice(0, 10) : null,
+      parse_summary: {
+        deal_id:      data.id,
+        deal_name:    name,
+        market,
+        parse_status: parseStatus,
+        noi:          parsed?.noi?.total ?? null,
+        unit_count:   unitCount,
+      },
+      parsed_data: parseStatus !== 'failed' ? parsed : null,
+    })
+
     return NextResponse.json({ ok: true, deal: data, parseStatus, parseNotes })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
@@ -182,6 +208,33 @@ export async function PATCH(request) {
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Archive new file to Storage if one was provided
+    if (file && file.size > 0) {
+      const storagePath = `underwriting/${id}/${file.name}`
+      await admin.storage.from('documents').upload(storagePath, buffer, {
+        contentType: file.type || 'application/octet-stream',
+        upsert: true,
+      })
+      await admin.from('underwriting_deals').update({ storage_path: storagePath }).eq('id', id)
+
+      await admin.from('documents').insert({
+        doc_type:     'underwriting_t12',
+        filename:     file.name,
+        storage_path: storagePath,
+        period_date:  updates.t12_period ? new Date(updates.t12_period).toISOString().slice(0, 10) : null,
+        parse_summary: {
+          deal_id:      id,
+          deal_name:    name,
+          market,
+          parse_status: updates.parse_status,
+          noi:          updates.t12_data?.noi?.total ?? null,
+          unit_count:   unitCount,
+        },
+        parsed_data: updates.parse_status !== 'failed' ? updates.t12_data : null,
+      })
+    }
+
     const ps = updates.parse_status
     return NextResponse.json({ ok: true, deal: data, parseStatus: ps, parseNotes: updates.parse_notes })
   } catch (err) {

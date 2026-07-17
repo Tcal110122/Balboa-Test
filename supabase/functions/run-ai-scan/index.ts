@@ -1,12 +1,12 @@
 // Supabase Edge Function: run-ai-scan
 //
 // For a given property (or all properties), fires probe queries at
-// OpenAI (GPT-4o) and Perplexity, records whether the property is
+// OpenAI (GPT-4o), Claude, and Gemini, records whether the property is
 // mentioned, its rank in the response, and a response excerpt.
 //
 // Required Supabase secrets:
 //   OPENAI_API_KEY
-//   PERPLEXITY_API_KEY
+//   GEMINI_API_KEY
 //
 // Invoke manually:
 //   POST { "property_slug": "irvington-place" }   — single property
@@ -25,7 +25,7 @@ const CORS_HEADERS = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!;
-const PERPLEXITY_API_KEY = Deno.env.get('PERPLEXITY_API_KEY')!;
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!;
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -53,23 +53,19 @@ async function queryOpenAI(prompt: string): Promise<string> {
   return data.choices[0].message.content as string;
 }
 
-async function queryPerplexity(prompt: string): Promise<string> {
-  const resp = await fetch('https://api.perplexity.ai/chat/completions', {
+async function queryGemini(prompt: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const resp = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'llama-3.1-sonar-large-128k-online',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 1000,
-      temperature: 0.3,
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 1000, temperature: 0.3 },
     }),
   });
-  if (!resp.ok) throw new Error(`Perplexity error: ${await resp.text()}`);
+  if (!resp.ok) throw new Error(`Gemini error: ${await resp.text()}`);
   const data = await resp.json();
-  return data.choices[0].message.content as string;
+  return data.candidates[0].content.parts[0].text as string;
 }
 
 async function queryClaude(prompt: string): Promise<string> {
@@ -179,7 +175,7 @@ Deno.serve(async (req) => {
             ? await queryOpenAI(adHocQueryText)
             : engine === 'claude'
             ? await queryClaude(adHocQueryText)
-            : await queryPerplexity(adHocQueryText);
+            : await queryGemini(adHocQueryText);
           const { mentioned, rank, excerpt, mentionType } = detectMention(response, prop.display_name);
           await supabase.from('ai_probe_results').insert({
             scan_id: scan.id, property_id: prop.id, engine,
@@ -250,7 +246,7 @@ Deno.serve(async (req) => {
             } else if (engine === 'claude') {
               response = await queryClaude(q.query_text);
             } else {
-              response = await queryPerplexity(q.query_text);
+              response = await queryGemini(q.query_text);
             }
 
             const { mentioned, rank, excerpt, mentionType } = detectMention(response, property.display_name);

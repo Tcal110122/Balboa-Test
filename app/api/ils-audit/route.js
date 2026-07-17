@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import supabase from '@/lib/supabase'
-import { requireAuth } from '@/lib/auth'
+import { requireAuth, userClient } from '@/lib/auth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -164,7 +164,8 @@ export async function PATCH(request) {
     const { property_id, ils_urls } = await request.json()
     if (!property_id) return NextResponse.json({ error: 'property_id required' }, { status: 400 })
 
-    const { error } = await supabase
+    const db = userClient(request)
+    const { error } = await db
       .from('properties')
       .update({ ils_urls, updated_at: new Date().toISOString() })
       .eq('id', property_id)

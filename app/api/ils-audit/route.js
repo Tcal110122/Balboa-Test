@@ -14,11 +14,12 @@ async function fetchPageText(url) {
       headers: {
         'Accept': 'text/plain',
         'X-Return-Format': 'text',
+        'X-Timeout': '20',
       },
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(25000),
     })
     if (!resp.ok) return { error: `HTTP ${resp.status}` }
-    const text = (await resp.text()).slice(0, 10000)
+    const text = (await resp.text()).slice(0, 15000)
     return { text }
   } catch (err) {
     return { error: err.message?.includes('timeout') ? 'Timeout' : 'Fetch failed' }
@@ -32,20 +33,28 @@ async function extractListing(pageText, platform, propertyName) {
       max_tokens: 1024,
       messages: [{
         role: 'user',
-        content: `Extract apartment listing data from this ${platform} page for "${propertyName}".
-Return ONLY valid JSON — no explanation, no markdown fences:
+        content: `You are extracting apartment rental listing data from a ${platform} page for the property "${propertyName}".
+
+Look carefully for:
+- Monthly rent prices (look for $ amounts near bedroom/unit types)
+- Move-in specials, concessions, free rent offers, or promotional pricing
+- Number of available or vacant units
+- Floor plan names with their prices
+- Contact phone number
+
+Return ONLY a valid JSON object, no explanation, no markdown:
 {
-  "starting_rent": <number or null>,
-  "max_rent": <number or null>,
-  "floor_plans": [{"type": <string>, "rent_min": <number>, "rent_max": <number>}],
-  "specials": <string or null — any concessions, free rent, move-in offers>,
-  "available_units": <number or null>,
-  "phone": <string or null>
+  "starting_rent": <lowest monthly rent as a number, or null if not found>,
+  "max_rent": <highest monthly rent as a number, or null>,
+  "floor_plans": [{"type": "Studio/1BR/2BR/etc", "rent_min": <number>, "rent_max": <number>}],
+  "specials": <exact text of any special offer, concession, or free rent promotion, or null>,
+  "available_units": <number of available/vacant units, or null>,
+  "phone": <phone number string, or null>
 }
 
-If the page does not appear to be a rental listing, return {"not_a_listing": true}.
+If this page is clearly not an apartment rental listing, return: {"not_a_listing": true}
 
-Page text:
+Page content:
 ${pageText}`,
       }],
     })

@@ -31094,7 +31094,15 @@ async function uwDelete(id){
       const resp = await fetch('/api/ils-audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ property_id: visSelectedId }),
+        body: JSON.stringify({
+          property_id: visSelectedId,
+          url_overrides: {
+            website:        document.getElementById('visIlsWebsite').value.trim() || null,
+            apartments_com: document.getElementById('visIlsApartments').value.trim() || null,
+            zillow:         document.getElementById('visIlsZillow').value.trim() || null,
+            apartment_list: document.getElementById('visIlsAptList').value.trim() || null,
+          },
+        }),
       });
       const data = await resp.json();
       if (!resp.ok) {

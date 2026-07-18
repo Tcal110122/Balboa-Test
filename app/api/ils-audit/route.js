@@ -27,7 +27,7 @@ export async function POST(request) {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const { property_id } = await request.json()
+    const { property_id, url_overrides } = await request.json()
     if (!property_id) return NextResponse.json({ error: 'property_id required' }, { status: 400 })
 
     const { data: prop, error: propErr } = await supabase
@@ -38,11 +38,12 @@ export async function POST(request) {
 
     if (propErr || !prop) return NextResponse.json({ error: 'Property not found' }, { status: 404 })
 
+    // Prefer URLs sent directly from the form over saved DB values
     const urls = {
-      website:        prop.ils_urls?.website || prop.gsc_site_url || null,
-      apartments_com: prop.ils_urls?.apartments_com || null,
-      zillow:         prop.ils_urls?.zillow || null,
-      apartment_list: prop.ils_urls?.apartment_list || null,
+      website:        url_overrides?.website        || prop.ils_urls?.website        || prop.gsc_site_url || null,
+      apartments_com: url_overrides?.apartments_com || prop.ils_urls?.apartments_com || null,
+      zillow:         url_overrides?.zillow         || prop.ils_urls?.zillow         || null,
+      apartment_list: url_overrides?.apartment_list || prop.ils_urls?.apartment_list || null,
     }
 
     // Fetch all pages in parallel
@@ -83,10 +84,13 @@ Keep it tight — this is a quick ops check, not a marketing doc.`,
       }],
     })
 
-    return NextResponse.json({
-      property: prop.display_name,
-      report: msg.content[0].text,
-    })
+    // Strip markdown code fences if Claude wrapped the HTML
+    const report = msg.content[0].text
+      .replace(/^```html?\s*\n?/i, '')
+      .replace(/\n?```\s*$/i, '')
+      .trim()
+
+    return NextResponse.json({ property: prop.display_name, report })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

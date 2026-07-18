@@ -784,40 +784,56 @@
       </div>
     </div>
 
-    <!-- ILS Audit -->
+    <!-- ILS Audit Report Generator -->
     <div class="card" style="margin-top:16px">
       <div class="card-hd">
-        <h2>ILS Audit</h2>
-        <span class="note">Listing accuracy · Apartments.com, Zillow, Apartment List</span>
+        <h2>ILS Audit Report</h2>
+        <span class="note">Compare listing accuracy · generates a Word doc for your PMs</span>
         <div class="grow"></div>
-        <button class="btn ghost" id="visIlsRunBtn" onclick="_vis.runIlsAudit()" style="font-size:12px">Run Audit</button>
+        <button class="btn ghost" id="visIlsRunBtn" onclick="_vis.generateIlsReport()" style="font-size:12px">Generate Report</button>
       </div>
       <div class="card-bd" style="padding:14px 18px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:12px">
+
+        <!-- Property info row -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:16px">
           <label class="fld">
-            <span>Property Website</span>
-            <input type="url" id="visIlsWebsite" placeholder="https://yourproperty.com" style="font-size:12px">
+            <span>Property Address</span>
+            <input type="text" id="visIlsAddress" placeholder="e.g. 1600 NW 38th St, Kansas City, MO" style="font-size:12px">
           </label>
           <label class="fld">
-            <span>Apartments.com Listing</span>
-            <input type="url" id="visIlsApartments" placeholder="https://www.apartments.com/..." style="font-size:12px">
-          </label>
-          <label class="fld">
-            <span>Zillow Listing</span>
-            <input type="url" id="visIlsZillow" placeholder="https://www.zillow.com/..." style="font-size:12px">
-          </label>
-          <label class="fld">
-            <span>Apartment List</span>
-            <input type="url" id="visIlsAptList" placeholder="https://www.apartmentlist.com/..." style="font-size:12px">
+            <span>Audit Date</span>
+            <input type="date" id="visIlsDate" style="font-size:12px">
           </label>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+
+        <!-- Per-platform data table -->
+        <div style="overflow-x:auto;margin-bottom:14px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700;white-space:nowrap;min-width:120px">Platform</th>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700">Listing URL</th>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700;white-space:nowrap">Starting Rent</th>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700;white-space:nowrap">Max Rent</th>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700">Specials / Concessions</th>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700;white-space:nowrap">Avail. Units</th>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700">Phone</th>
+                <th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--line-soft);font-size:11px;color:var(--ink-faint);font-weight:700">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="visIlsFormBody">
+              <!-- rows injected by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center">
           <button class="btn ghost" onclick="_vis.saveIlsUrls()" style="font-size:12px">Save URLs</button>
           <span id="visIlsSaveStatus" style="font-size:11.5px;color:var(--ink-faint)"></span>
+          <div class="grow"></div>
+          <span id="visIlsReportStatus" style="font-size:11.5px;color:var(--ink-faint)"></span>
         </div>
-        <div id="visIlsAuditStatus" style="font-size:12px;color:var(--ink-faint);margin-bottom:8px;display:none"></div>
-        <div id="visIlsResults" style="display:none"></div>
-        <div id="visIlsEmpty" style="font-size:12px;color:var(--ink-faint)">Enter listing URLs above and click Run Audit to check for pricing, specials, and availability discrepancies.</div>
+
       </div>
     </div>
 
@@ -30093,7 +30109,7 @@ async function uwDelete(id){
     setVisStatus('Loading properties…');
     const { data, error } = await getSB()
       .from('properties')
-      .select('id, slug, display_name, city, state, gsc_site_url, ils_urls')
+      .select('id, slug, display_name, city, state, address, gsc_site_url, ils_urls')
       .order('display_name');
 
     if (error) { setVisStatus('Error loading properties: ' + error.message, true); return; }
@@ -31030,45 +31046,91 @@ async function uwDelete(id){
     deleteQuery: deleteQuery,
     toggleQuery: toggleQuery,
     saveIlsUrls: saveIlsUrls,
-    runIlsAudit: runIlsAudit,
+    generateIlsReport: generateIlsReport,
   };
 
-  // ---- ILS Audit ----
+  // ---- ILS Report ----
+  var ILS_PLATFORMS = [
+    { key: 'website',        label: 'Website (Source)' },
+    { key: 'apartments_com', label: 'Apartments.com' },
+    { key: 'zillow',         label: 'Zillow' },
+    { key: 'apartment_list', label: 'Apartment List' },
+  ];
+
+  function buildIlsFormRows(prop) {
+    var urls = (prop && prop.ils_urls) || {};
+    var defaultUrls = {
+      website:        urls.website || (prop && prop.gsc_site_url) || '',
+      apartments_com: urls.apartments_com || '',
+      zillow:         urls.zillow || '',
+      apartment_list: urls.apartment_list || '',
+    };
+    var tbody = document.getElementById('visIlsFormBody');
+    tbody.innerHTML = '';
+    ILS_PLATFORMS.forEach(function(plat, i) {
+      var bg = i === 0 ? 'background:var(--surface-raised, #f8fafc);' : '';
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td style="padding:6px 10px;border-bottom:1px solid var(--line-soft);font-size:12px;font-weight:600;white-space:nowrap;' + bg + '">' + escHtml(plat.label) + '</td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--line-soft);' + bg + '"><input data-ils="' + plat.key + '-url" type="url" value="' + escHtml(defaultUrls[plat.key]) + '" placeholder="https://…" style="font-size:11px;width:180px;padding:3px 6px;border:1px solid var(--line-soft);border-radius:4px;background:transparent;color:inherit"></td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--line-soft);' + bg + '"><input data-ils="' + plat.key + '-rent_min" type="number" placeholder="e.g. 1550" style="font-size:11px;width:80px;padding:3px 6px;border:1px solid var(--line-soft);border-radius:4px;background:transparent;color:inherit"></td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--line-soft);' + bg + '"><input data-ils="' + plat.key + '-rent_max" type="number" placeholder="e.g. 2800" style="font-size:11px;width:80px;padding:3px 6px;border:1px solid var(--line-soft);border-radius:4px;background:transparent;color:inherit"></td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--line-soft);' + bg + '"><input data-ils="' + plat.key + '-specials" type="text" placeholder="e.g. 1 month free" style="font-size:11px;width:160px;padding:3px 6px;border:1px solid var(--line-soft);border-radius:4px;background:transparent;color:inherit"></td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--line-soft);' + bg + '"><input data-ils="' + plat.key + '-available_units" type="number" placeholder="0" style="font-size:11px;width:54px;padding:3px 6px;border:1px solid var(--line-soft);border-radius:4px;background:transparent;color:inherit"></td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--line-soft);' + bg + '"><input data-ils="' + plat.key + '-phone" type="text" placeholder="(816) 555-1234" style="font-size:11px;width:110px;padding:3px 6px;border:1px solid var(--line-soft);border-radius:4px;background:transparent;color:inherit"></td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--line-soft);' + bg + '"><input data-ils="' + plat.key + '-notes" type="text" placeholder="Any notes…" style="font-size:11px;width:130px;padding:3px 6px;border:1px solid var(--line-soft);border-radius:4px;background:transparent;color:inherit"></td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function getIlsFormData() {
+    var platforms = {};
+    ILS_PLATFORMS.forEach(function(plat) {
+      var get = function(field) {
+        var el = document.querySelector('[data-ils="' + plat.key + '-' + field + '"]');
+        return el ? el.value.trim() : '';
+      };
+      platforms[plat.key] = {
+        url:             get('url') || null,
+        rent_min:        get('rent_min') ? Number(get('rent_min')) : null,
+        rent_max:        get('rent_max') ? Number(get('rent_max')) : null,
+        specials:        get('specials') || null,
+        available_units: get('available_units') !== '' ? Number(get('available_units')) : null,
+        phone:           get('phone') || null,
+        notes:           get('notes') || null,
+      };
+    });
+    return platforms;
+  }
+
   function loadIlsData() {
-    const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
-    if (!prop) return;
-    const urls = prop.ils_urls || {};
-    document.getElementById('visIlsWebsite').value = urls.website || prop.gsc_site_url || '';
-    document.getElementById('visIlsApartments').value = urls.apartments_com || '';
-    document.getElementById('visIlsZillow').value = urls.zillow || '';
-    document.getElementById('visIlsAptList').value = urls.apartment_list || '';
-    document.getElementById('visIlsResults').style.display = 'none';
-    document.getElementById('visIlsResults').innerHTML = '';
-    document.getElementById('visIlsEmpty').style.display = '';
-    document.getElementById('visIlsAuditStatus').style.display = 'none';
+    var prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+    document.getElementById('visIlsAddress').value = (prop && prop.address) || '';
+    document.getElementById('visIlsDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('visIlsSaveStatus').textContent = '';
+    document.getElementById('visIlsReportStatus').textContent = '';
+    buildIlsFormRows(prop || null);
   }
 
   async function saveIlsUrls() {
     if (!visSelectedId) return;
-    const ils_urls = {
-      website:        document.getElementById('visIlsWebsite').value.trim() || null,
-      apartments_com: document.getElementById('visIlsApartments').value.trim() || null,
-      zillow:         document.getElementById('visIlsZillow').value.trim() || null,
-      apartment_list: document.getElementById('visIlsAptList').value.trim() || null,
+    var platforms = getIlsFormData();
+    var ils_urls = {
+      website:        platforms.website.url,
+      apartments_com: platforms.apartments_com.url,
+      zillow:         platforms.zillow.url,
+      apartment_list: platforms.apartment_list.url,
     };
-    const statusEl = document.getElementById('visIlsSaveStatus');
+    var statusEl = document.getElementById('visIlsSaveStatus');
     statusEl.textContent = 'Saving…';
     try {
-      const resp = await fetch('/api/ils-audit', {
+      var resp = await fetch('/api/ils-audit', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ property_id: visSelectedId, ils_urls }),
       });
-      const data = await resp.json();
+      var data = await resp.json();
       if (!resp.ok) { statusEl.textContent = 'Error: ' + (data.error || resp.status); return; }
-      // Update local cache so property switch reloads correctly
-      const prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+      var prop = visProperties.find(function(p) { return p.id === visSelectedId; });
       if (prop) prop.ils_urls = ils_urls;
       statusEl.textContent = 'Saved ✓';
       setTimeout(function() { statusEl.textContent = ''; }, 3000);
@@ -31077,57 +31139,48 @@ async function uwDelete(id){
     }
   }
 
-  async function runIlsAudit() {
+  async function generateIlsReport() {
     if (!visSelectedId) return;
-    const btn = document.getElementById('visIlsRunBtn');
-    const statusEl = document.getElementById('visIlsAuditStatus');
-    const resultsEl = document.getElementById('visIlsResults');
-    const emptyEl = document.getElementById('visIlsEmpty');
+    var prop = visProperties.find(function(p) { return p.id === visSelectedId; });
+    var btn = document.getElementById('visIlsRunBtn');
+    var statusEl = document.getElementById('visIlsReportStatus');
     btn.disabled = true;
-    btn.textContent = 'Auditing…';
-    statusEl.style.display = '';
-    statusEl.style.color = 'var(--ink-faint)';
-    statusEl.textContent = 'Fetching pages and extracting listing data — this takes ~20 seconds…';
-    emptyEl.style.display = 'none';
-    resultsEl.style.display = 'none';
+    btn.textContent = 'Generating…';
+    statusEl.textContent = 'Analyzing listings and writing report — takes ~15 seconds…';
     try {
-      const resp = await fetch('/api/ils-audit', {
+      var resp = await fetch('/api/ils-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          property_id: visSelectedId,
-          url_overrides: {
-            website:        document.getElementById('visIlsWebsite').value.trim() || null,
-            apartments_com: document.getElementById('visIlsApartments').value.trim() || null,
-            zillow:         document.getElementById('visIlsZillow').value.trim() || null,
-            apartment_list: document.getElementById('visIlsAptList').value.trim() || null,
-          },
+          property_name:    prop ? prop.display_name : 'Property',
+          property_address: document.getElementById('visIlsAddress').value.trim(),
+          audit_date:       document.getElementById('visIlsDate').value,
+          platforms:        getIlsFormData(),
         }),
       });
-      const data = await resp.json();
       if (!resp.ok) {
-        statusEl.style.color = 'var(--warn)';
-        statusEl.textContent = 'Audit failed: ' + (data.error || resp.status);
+        var err = await resp.json().catch(function() { return { error: resp.status }; });
+        statusEl.textContent = 'Error: ' + (err.error || resp.status);
         return;
       }
-      statusEl.style.display = 'none';
-      renderIlsResults(data);
+      var blob = await resp.blob();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      var slug = (prop ? prop.display_name : 'Property').replace(/\s+/g, '-');
+      a.href = url;
+      a.download = 'ILS-Audit-' + slug + '-' + document.getElementById('visIlsDate').value + '.docx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      statusEl.textContent = 'Report downloaded ✓';
+      setTimeout(function() { statusEl.textContent = ''; }, 4000);
     } catch(err) {
-      statusEl.style.color = 'var(--warn)';
       statusEl.textContent = 'Error: ' + err.message;
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Run Audit';
+      btn.textContent = 'Generate Report';
     }
-  }
-
-  function renderIlsResults(data) {
-    const resultsEl = document.getElementById('visIlsResults');
-    const header = '<div style="font-size:11.5px;color:var(--ink-faint);margin-bottom:12px">Audited '
-      + escHtml(data.property) + ' · <span style="font-style:italic">AI-generated report</span></div>';
-    resultsEl.innerHTML = '<div style="overflow-x:auto">' + header + data.report + '</div>';
-    resultsEl.style.display = '';
-    document.getElementById('visIlsEmpty').style.display = 'none';
   }
 
 })();

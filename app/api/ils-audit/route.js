@@ -3,98 +3,23 @@ import Anthropic from '@anthropic-ai/sdk'
 import supabase from '@/lib/supabase'
 import { requireAuth, userClient } from '@/lib/auth'
 
+export const maxDuration = 60
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-// Jina AI reader renders JavaScript-heavy pages and returns clean markdown
-async function fetchPageText(url) {
-  if (!url) return null
+async function fetchPageText(url, label) {
+  if (!url) return { label, url: null, text: null, error: 'No URL provided' }
   try {
-    const jinaUrl = 'https://r.jina.ai/' + url
-    const resp = await fetch(jinaUrl, {
-      headers: {
-        'Accept': 'text/plain',
-        'X-Return-Format': 'text',
-        'X-Timeout': '20',
-      },
+    const resp = await fetch('https://r.jina.ai/' + url, {
+      headers: { 'Accept': 'text/plain', 'X-Return-Format': 'text', 'X-Timeout': '20' },
       signal: AbortSignal.timeout(25000),
     })
-    if (!resp.ok) return { error: `HTTP ${resp.status}` }
-    const text = (await resp.text()).slice(0, 15000)
-    return { text }
+    if (!resp.ok) return { label, url, text: null, error: `HTTP ${resp.status}` }
+    const text = (await resp.text()).slice(0, 12000)
+    return { label, url, text, error: null }
   } catch (err) {
-    return { error: err.message?.includes('timeout') ? 'Timeout' : 'Fetch failed' }
+    return { label, url, text: null, error: err.message?.includes('timeout') ? 'Timeout' : 'Fetch failed' }
   }
-}
-
-async function extractListing(pageText, platform, propertyName) {
-  try {
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `You are extracting apartment rental listing data from a ${platform} page for the property "${propertyName}".
-
-Look carefully for:
-- Monthly rent prices (look for $ amounts near bedroom/unit types)
-- Move-in specials, concessions, free rent offers, or promotional pricing
-- Number of available or vacant units
-- Floor plan names with their prices
-- Contact phone number
-
-Return ONLY a valid JSON object, no explanation, no markdown:
-{
-  "starting_rent": <lowest monthly rent as a number, or null if not found>,
-  "max_rent": <highest monthly rent as a number, or null>,
-  "floor_plans": [{"type": "Studio/1BR/2BR/etc", "rent_min": <number>, "rent_max": <number>}],
-  "specials": <exact text of any special offer, concession, or free rent promotion, or null>,
-  "available_units": <number of available/vacant units, or null>,
-  "phone": <phone number string, or null>
-}
-
-If this page is clearly not an apartment rental listing, return: {"not_a_listing": true}
-
-Page content:
-${pageText}`,
-      }],
-    })
-    const raw = msg.content[0].text.trim()
-    const jsonStr = raw.match(/\{[\s\S]+\}/)?.[0]
-    if (!jsonStr) return { parse_error: true }
-    return JSON.parse(jsonStr)
-  } catch {
-    return { parse_error: true }
-  }
-}
-
-function compareToWebsite(website, ils, platform) {
-  const flags = []
-  if (!website || website.error || website.not_a_listing) return flags
-
-  if (website.starting_rent && ils.starting_rent) {
-    const diff = ils.starting_rent - website.starting_rent
-    const pct = Math.abs(diff) / website.starting_rent
-    if (Math.abs(diff) > 75 || pct > 0.05) {
-      const dir = diff < 0 ? 'lower' : 'higher'
-      flags.push({
-        type: diff < 0 ? 'price_low' : 'price_high',
-        severity: pct > 0.1 ? 'high' : 'medium',
-        msg: `Starting rent $${Math.abs(Math.round(diff))} ${dir} than website (${Math.round(pct * 100)}%)`,
-      })
-    }
-  } else if (website.starting_rent && !ils.starting_rent) {
-    flags.push({ type: 'no_price', severity: 'medium', msg: 'No rent found on ' + platform })
-  }
-
-  if (website.specials && !ils.specials) {
-    flags.push({
-      type: 'missing_special',
-      severity: 'high',
-      msg: 'Website advertises a special but none found on ' + platform,
-    })
-  }
-
-  return flags
 }
 
 export async function POST(request) {
@@ -120,37 +45,48 @@ export async function POST(request) {
       apartment_list: prop.ils_urls?.apartment_list || null,
     }
 
-    const platforms = ['website', 'apartments_com', 'zillow', 'apartment_list']
-    const labels = { website: 'Website', apartments_com: 'Apartments.com', zillow: 'Zillow', apartment_list: 'Apartment List' }
-
     // Fetch all pages in parallel
-    const fetched = await Promise.all(
-      platforms.map(p => urls[p] ? fetchPageText(urls[p]) : Promise.resolve(null))
-    )
+    const pages = await Promise.all([
+      fetchPageText(urls.website,        'Property Website'),
+      fetchPageText(urls.apartments_com, 'Apartments.com'),
+      fetchPageText(urls.zillow,         'Zillow'),
+      fetchPageText(urls.apartment_list, 'Apartment List'),
+    ])
 
-    // Extract listing data from each
-    const extracted = await Promise.all(
-      platforms.map((p, i) => {
-        const f = fetched[i]
-        if (!f) return Promise.resolve({ skipped: true })
-        if (f.error) return Promise.resolve({ error: f.error })
-        return extractListing(f.text, labels[p], prop.display_name)
-      })
-    )
+    // Build context for Claude
+    const pageBlocks = pages.map(p => {
+      const header = `--- ${p.label}${p.url ? ' (' + p.url + ')' : ''} ---`
+      if (!p.url) return `${header}\nNot configured — no URL provided.\n`
+      if (p.error) return `${header}\nFetch failed: ${p.error}\n`
+      return `${header}\n${p.text}\n`
+    }).join('\n')
 
-    const results = {}
-    const websiteData = extracted[0]
-    platforms.forEach((p, i) => {
-      const data = extracted[i]
-      results[p] = {
-        url: urls[p],
-        label: labels[p],
-        ...data,
-        flags: i === 0 ? [] : compareToWebsite(websiteData, data, labels[p]),
-      }
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-5',
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: `You are auditing ILS listing accuracy for the apartment property "${prop.display_name}".
+
+The property website is the source of truth. Compare each ILS platform against it and identify any discrepancies that could hurt leasing performance.
+
+${pageBlocks}
+
+Generate a concise HTML audit report using ONLY inline styles. Do not include <html>, <head>, <body>, or <style> tags.
+
+Structure:
+1. A summary line (e.g. "<strong style='color:#15803d'>✓ No issues found</strong>" or "<strong style='color:#dc2626'>3 issues found</strong>")
+2. A comparison table (font-size:12px; border-collapse:collapse; width:100%) with columns for each source and rows for: Starting Rent, Specials / Concessions, Available Units, Floor Plans, Phone. Use padding:6px 10px on cells, border-bottom:1px solid #e2e8f0. Show "—" for missing data.
+3. If there are issues, an "Issues" section listing them clearly. Flag: rent differs by >$50 or >5%, website has a special but ILS doesn't, ILS rent is lower than website, phone number differs.
+
+Keep it tight — this is a quick ops check, not a marketing doc.`,
+      }],
     })
 
-    return NextResponse.json({ property: prop.display_name, results })
+    return NextResponse.json({
+      property: prop.display_name,
+      report: msg.content[0].text,
+    })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

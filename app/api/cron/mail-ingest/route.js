@@ -35,13 +35,15 @@ async function processMessage(db, aliases, m) {
 
   // Same email seen before (e.g. a move failed last run): just file it.
   const { data: seen } = await db.from('inbound_messages').select('id, status').eq('internet_message_id', m.internetMessageId).maybeSingle()
-  if (seen && seen.status !== 'failed') {
+  // 'received' means an earlier run was cut off mid-way (e.g. a timeout); retry those.
+  const DONE = ['processed', 'rejected_sender', 'no_attachments']
+  if (seen && DONE.includes(seen.status)) {
     await mail.moveMessage(m.id, seen.status === 'processed' ? 'Processed' : 'Needs review')
     return { subject: m.subject, status: 'already_seen' }
   }
 
   const { data: row, error } = seen
-    ? await db.from('inbound_messages').update({ ...base, status: 'received', error: null }).eq('id', seen.id).select('id').single()
+    ? await db.from('inbound_messages').update({ ...base, status: 'received', error: seen.status === 'received' ? 'Retrying after an interrupted run' : null }).eq('id', seen.id).select('id').single()
     : await db.from('inbound_messages').insert(base).select('id').single()
   if (error) throw new Error(`inbound_messages: ${error.message}`)
 

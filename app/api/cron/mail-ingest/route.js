@@ -91,8 +91,17 @@ export async function GET(request) {
   }
 
   const db = adminClient()
-  const aliases = await loadAliases(db)
-  const messages = await mail.listInboxMessages(PER_RUN)
+  let aliases, messages
+  try {
+    aliases = await loadAliases(db)
+  } catch (e) {
+    return NextResponse.json({ ok: false, step: 'loading deal aliases from Supabase', error: e.message }, { status: 500 })
+  }
+  try {
+    messages = await mail.listInboxMessages(PER_RUN)
+  } catch (e) {
+    return NextResponse.json({ ok: false, step: 'reading the reports@ inbox from Microsoft', error: e.message }, { status: 500 })
+  }
 
   const results = []
   for (const m of messages) {

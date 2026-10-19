@@ -81,7 +81,14 @@ async function processMessage(db, aliases, m) {
 
 export async function GET(request) {
   if (!(await authorized(request))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!mail.isConfigured()) return NextResponse.json({ ok: false, reason: 'Mailbox not configured (MS_* env vars)' })
+  if (!mail.isConfigured()) {
+    return NextResponse.json({
+      ok: false,
+      reason: 'Mailbox not configured',
+      missing: mail.missingSettings(),
+      environment: process.env.VERCEL_ENV || 'unknown',
+    })
+  }
 
   const db = adminClient()
   const aliases = await loadAliases(db)

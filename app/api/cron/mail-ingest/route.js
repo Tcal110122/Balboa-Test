@@ -100,7 +100,12 @@ export async function GET(request) {
   try {
     messages = await mail.listInboxMessages(PER_RUN)
   } catch (e) {
-    return NextResponse.json({ ok: false, step: 'reading the reports@ inbox from Microsoft', error: e.message }, { status: 500 })
+    const body = { ok: false, step: 'reading the reports@ inbox from Microsoft', error: e.message }
+    if (/AADSTS7000215|client secret/i.test(e.message)) {
+      body.secret_check = mail.secretShape()
+      body.deployment = { commit: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7), id: process.env.VERCEL_DEPLOYMENT_ID || null }
+    }
+    return NextResponse.json(body, { status: 500 })
   }
 
   const results = []

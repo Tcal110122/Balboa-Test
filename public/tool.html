@@ -236,6 +236,7 @@
   <button class="tab" data-tab="units">Unit Detail</button>
   <button class="tab" data-tab="trends">Trends</button>
   <button class="tab" data-tab="history">Period History</button>
+  <button class="tab" data-tab="review">Monthly Review</button>
   <button class="tab" data-tab="documents">Documents</button>
   <button class="tab" data-tab="queries">Queries</button>
   <button class="tab" data-tab="portcomp">Portfolio Comparison</button>
@@ -1426,6 +1427,20 @@
   </div>
 
   <!-- DOCUMENTS -->
+  <!-- MONTHLY REVIEW -->
+  <div class="panel" id="panel-review">
+    <div class="toolbar">
+      <h2 style="font-size:16px;font-weight:700">Monthly Review</h2>
+      <select id="rvPeriod" title="Month" style="display:none"></select>
+      <div class="grow"></div>
+      <span id="rvBusy" class="muted" style="font-size:12px"></span>
+      <button class="btn subtle sm" id="rvCheckMail" style="display:none" title="Check reports@ for new packages now">Check mailbox</button>
+      <button class="btn ghost sm" id="rvDraft" style="display:none">Draft review</button>
+    </div>
+    <div id="rvPackages"></div>
+    <div id="rvBody"><div class="empty">Loading…</div></div>
+  </div>
+
   <div class="panel" id="panel-documents">
     <div class="toolbar">
       <h2 style="font-size:14px">Partnership Documents</h2>
@@ -31635,6 +31650,310 @@ function uwShowTab(tab) {
 
   window.ozUpdate=function(key,val){state[key]=val;render();};
   window.ozInit=function(){buildSliders();render();};
+})();
+</script>
+<script>
+/* ============ Monthly Review tab ============
+   Reads /api/reviews for the current deal: packages received at
+   reports@, the Claude-drafted review for the month, and the action-item
+   tracker. Balboa (sponsor) users can draft, approve, send and update. */
+(function () {
+  const rv = { data: null, period: null, loading: false };
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const usd = v => v == null ? '—' : (v < 0 ? '−$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US');
+  const signed = v => v == null ? '—' : (v >= 0 ? '+' : '−') + '$' + Math.abs(Math.round(v)).toLocaleString('en-US');
+  const monthLabel = p => p ? new Date(p + 'T00:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+  const STATUS = { open: 'Open', sent: 'Sent to manager', response_received: 'Response received', resolved: 'Resolved' };
+  const PILL = { open: 'amber', sent: 'amber', response_received: 'green', resolved: 'green', parsed: 'green', needs_attention: 'red', failed: 'red', received: 'amber' };
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
+  };
+
+  function busy(msg) { $('rvBusy').textContent = msg || ''; }
+
+  async function api(url, opts) {
+    const res = await fetch(url, opts);
+    let body = null;
+    try { body = await res.json(); } catch (e) { /* non-JSON error page */ }
+    if (!res.ok) throw new Error((body && (body.error || body.reason)) || ('Request failed (' + res.status + ')'));
+    return body;
+  }
+
+  async function load() {
+    if (!DEAL_ID) { $('rvBody').innerHTML = '<div class="empty">Select a property.</div>'; return; }
+    rv.loading = true;
+    const q = '/api/reviews?deal_id=' + encodeURIComponent(DEAL_ID) + (rv.period ? '&period=' + rv.period : '');
+    try {
+      rv.data = await api(q);
+      rv.period = rv.data.review ? rv.data.review.period : rv.period;
+      render();
+    } catch (e) {
+      $('rvBody').innerHTML = '<div class="hint warn"><b>Couldn\'t load the review.</b> ' + esc(e.message) + '</div>';
+    } finally { rv.loading = false; }
+  }
+
+  // ---------- rendering ----------
+
+  function render() {
+    const d = rv.data, edit = d.can_edit;
+    $('rvCheckMail').style.display = edit ? '' : 'none';
+    // Draft button targets: the month with no review yet, or the current draft.
+    // An approved/sent month is never redrafted from here.
+    const latestParsed = d.packages.filter(p => p.status === 'parsed').map(p => p.period).sort().pop() || null;
+    const r0 = d.review;
+    rv.draftPeriod = !r0 ? latestParsed : r0.status === 'draft' ? r0.period : (latestParsed && latestParsed > r0.period ? latestParsed : null);
+    $('rvDraft').style.display = edit && rv.draftPeriod ? '' : 'none';
+    $('rvDraft').textContent = r0 && r0.status === 'draft' && rv.draftPeriod === r0.period ? 'Redraft' : 'Draft ' + monthLabel(rv.draftPeriod) + ' review';
+
+    const sel = $('rvPeriod');
+    sel.style.display = d.periods.length > 1 ? '' : 'none';
+    sel.innerHTML = d.periods.map(p => '<option value="' + p + '"' + (p === rv.period ? ' selected' : '') + '>' + monthLabel(p) + '</option>').join('');
+
+    $('rvPackages').innerHTML = renderPackages(d.packages);
+    if (!d.review) {
+      const parsed = d.packages.find(p => p.status === 'parsed');
+      $('rvBody').innerHTML = '<div class="empty">' + (parsed
+        ? 'The ' + monthLabel(parsed.period) + ' package is in. ' + (edit ? 'Click <b>Draft review</b> to have Claude write the review.' : 'The review hasn\'t been drafted yet.')
+        : 'No package has arrived for this property yet. Managers (or anyone at Balboa) can email packages to <b>reports@thebalboagroup.com</b>.') + '</div>'
+        + renderTracker(d.action_items, edit);
+      return;
+    }
+    $('rvBody').innerHTML = renderReview(d.review, d.action_items, edit);
+  }
+
+  function renderPackages(pkgs) {
+    if (!pkgs.length) return '';
+    const rows = pkgs.slice(0, 4).map(p => {
+      const s = p.summary || {};
+      const warn = (s.warnings || []).length ? ' title="' + esc(s.warnings.join('\n')) + '"' : '';
+      return '<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"' + warn + '>'
+        + '<span class="pill ' + (PILL[p.status] || 'amber') + '">' + esc(p.status.replace('_', ' ')) + '</span>'
+        + '<span>' + esc(monthLabel(p.period) || 'Unknown month') + '</span>'
+        + '<span class="muted">' + (s.files || 0) + ' files · received ' + new Date(p.created_at).toLocaleDateString() + '</span></span>';
+    }).join('');
+    return '<div style="font-size:12.5px;margin-bottom:16px">' + rows + '</div>';
+  }
+
+  function tile(k, v, x, flag) {
+    return '<div class="tile' + (flag ? ' flag' : '') + '"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="x">' + x + '</div></div>';
+  }
+
+  function renderReview(r, items, edit) {
+    const c = r.content || {}, f = r.flags || {};
+    const noi = f.noi || {}, m = noi.month || {}, y = noi.ytd || {};
+    const occ = f.occupancy, util = (f.utility_recovery || []).filter(u => u.flag);
+    const statusPill = r.status === 'draft' ? '<span class="pill amber">Draft</span>' : r.status === 'approved' ? '<span class="pill green">Approved</span>' : '<span class="pill green">Sent ' + (r.sent_at ? new Date(r.sent_at).toLocaleDateString() : '') + '</span>';
+
+    let h = '<div class="card"><div class="card-hd"><h2>' + esc(monthLabel(r.period)) + ' review ' + statusPill + '</h2>'
+      + '<span class="note">Drafted by Claude ' + new Date(r.created_at).toLocaleString() + '</span></div>'
+      + '<div style="padding:16px 18px"><div style="font-size:15px;font-weight:700;margin-bottom:8px">' + esc(c.headline) + '</div>'
+      + '<div style="color:var(--ink-soft);max-width:900px">' + esc(c.summary) + '</div></div></div>';
+
+    h += '<div class="tiles">'
+      + tile('NOI · month', usd(m.actual), 'Budget ' + usd(m.budget) + ' · ' + signed((m.actual || 0) - (m.budget || 0)), m.actual < m.budget)
+      + tile('NOI · year to date', usd(y.actual), 'Budget ' + usd(y.budget) + ' · opex ' + signed(y.opex_variance) + ' vs budget', y.actual < y.budget)
+      + (occ ? tile('Occupancy', occ.occupancy_pct + '%', occ.vacant + ' of ' + occ.beds + ' beds vacant', occ.occupancy_pct < 95) : tile('Unexplained variances', (f.unexplained_variances || []).length, 'of ' + ((f.note_coverage || {}).material || 0) + ' over $1K', (f.unexplained_variances || []).length > 3))
+      + (util.length ? tile(esc(util[0].utility) + ' recovery', (util[0].recent_recovery_pct ?? '—') + '%', 'Recent months · was ' + (util[0].prior_recovery_pct ?? '—') + '%', true)
+        : tile('Variance notes', ((f.note_coverage || {}).explained || 0) + ' / ' + ((f.note_coverage || {}).material || 0), 'material variances explained', false))
+      + '</div>';
+
+    h += r.status === 'draft' ? renderProposed(c.action_items || [], edit) : renderTracker(items, edit, r);
+
+    if ((c.open_item_updates || []).length) {
+      const byId = Object.fromEntries(items.map(i => [i.id, i]));
+      h += '<div class="card"><div class="card-hd"><h2>Prior items: what this month shows</h2></div><div style="overflow-x:auto"><table><thead><tr><th class="l">Item</th><th class="l">Assessment</th><th class="l">Suggested</th></tr></thead><tbody>'
+        + c.open_item_updates.map(u => '<tr><td class="l"><b>' + esc((byId[u.action_item_id] || {}).title || 'Prior item') + '</b></td><td class="l">' + esc(u.assessment) + '</td><td class="l"><span class="pill ' + (u.suggested_status === 'resolved' ? 'green' : u.suggested_status === 'escalate' ? 'red' : 'amber') + '">' + esc(u.suggested_status.replace('_', ' ')) + '</span></td></tr>').join('')
+        + '</tbody></table></div></div>';
+    }
+
+    if ((c.internal_actions || []).length) {
+      h += '<div class="card"><div class="card-hd"><h2>For the Balboa team</h2><span class="note">Not sent to the manager</span></div><div style="padding:10px 18px">'
+        + c.internal_actions.map(a => '<div style="margin:6px 0"><b>' + esc(a.title) + '.</b> ' + esc(a.detail) + '</div>').join('') + '</div></div>';
+    }
+
+    if (c.manager_assessment) {
+      h += '<div class="card"><div class="card-hd"><h2>Manager reporting</h2></div><div style="padding:12px 18px;color:var(--ink-soft)">' + esc(c.manager_assessment) + '</div></div>';
+    }
+
+    h += renderChecks(f);
+    return h;
+  }
+
+  function renderProposed(items, edit) {
+    if (!items.length) return '<div class="hint">Claude found nothing that needs an ask of the manager this month.</div>';
+    const pr = { high: 'red', medium: 'amber', low: 'green' };
+    let h = '<div class="card"><div class="card-hd"><h2>Proposed action items</h2><span class="note">' + (edit ? 'Edit the asks, set owners and due dates, untick anything to drop, then approve.' : 'Awaiting approval by Balboa.') + '</span></div>';
+    h += items.map((it, i) => '<div style="padding:14px 18px;border-bottom:1px solid var(--line-soft)" data-rv-item="' + i + '">'
+      + '<div style="display:flex;gap:10px;align-items:flex-start">'
+      + (edit ? '<input type="checkbox" checked data-f="include" style="margin-top:4px">' : '')
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>' + esc(it.title) + '</b><span class="pill ' + (pr[it.priority] || 'amber') + '">' + esc(it.priority) + '</span><span class="muted" style="font-size:12px">' + esc(it.at_stake) + '</span></div>'
+      + '<div style="color:var(--ink-soft);margin:6px 0">' + esc(it.finding) + '</div>'
+      + (edit ? '<textarea data-f="ask" rows="2" style="width:100%;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:5px">' + esc(it.ask) + '</textarea>'
+        + '<div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap"><input type="text" data-f="owner" placeholder="Owner (e.g. Connor)" style="width:200px"><input type="date" data-f="due_date"></div>'
+        : '<div><b>Ask:</b> ' + esc(it.ask) + '</div>')
+      + '</div></div></div>').join('');
+    if (edit) h += '<div style="padding:12px 18px;display:flex;gap:10px;align-items:center"><button class="btn" id="rvApprove">Approve and add to tracker</button><span class="muted" style="font-size:12px">Nothing is sent to the manager until you choose to send it.</span></div>';
+    return h + '</div>';
+  }
+
+  function renderTracker(items, edit, review) {
+    if (!items.length) return '';
+    const order = { open: 0, sent: 1, response_received: 2, resolved: 3 };
+    const sorted = items.slice().sort((a, b) => (order[a.status] - order[b.status]) || (b.opened_period || '').localeCompare(a.opened_period || ''));
+    const open = items.filter(i => i.status !== 'resolved').length;
+    let h = '<div class="card"><div class="card-hd"><h2>Action items</h2><span class="note">' + open + ' open · ' + (items.length - open) + ' resolved</span></div>';
+    h += '<div style="overflow-x:auto"><table><thead><tr><th class="l">Opened</th><th class="l">Item</th><th class="l">Owner</th><th class="l">Due</th><th class="l">Status</th><th class="l">Manager response</th></tr></thead><tbody>';
+    h += sorted.map(i => '<tr data-rv-ai="' + i.id + '"' + (i.status === 'resolved' ? ' style="opacity:.6"' : '') + '>'
+      + '<td class="l" style="white-space:nowrap">' + esc((i.opened_period || '').slice(0, 7)) + '</td>'
+      + '<td class="l" style="min-width:260px"><b>' + esc(i.title) + '</b><div class="muted" style="font-size:12px">' + esc(i.ask) + '</div>' + (i.at_stake ? '<div style="font-size:11.5px;color:var(--gold)">' + esc(i.at_stake) + '</div>' : '') + '</td>'
+      + (edit
+        ? '<td class="l"><input type="text" data-f="owner" value="' + esc(i.owner || '') + '" style="width:110px;text-align:left"></td>'
+          + '<td class="l"><input type="date" data-f="due_date" value="' + esc(i.due_date || '') + '"></td>'
+          + '<td class="l"><select data-f="status">' + Object.keys(STATUS).map(s => '<option value="' + s + '"' + (s === i.status ? ' selected' : '') + '>' + STATUS[s] + '</option>').join('') + '</select></td>'
+          + '<td class="l"><textarea data-f="manager_response" rows="2" placeholder="Paste or summarize their answer" style="width:240px;font:inherit;font-size:12.5px;padding:5px 7px;border:1px solid var(--line-soft);border-radius:4px">' + esc(i.manager_response || '') + '</textarea></td>'
+        : '<td class="l">' + esc(i.owner || '—') + '</td><td class="l">' + esc(i.due_date || '—') + '</td><td class="l"><span class="pill ' + PILL[i.status] + '">' + STATUS[i.status] + '</span></td><td class="l">' + esc(i.manager_response || '') + '</td>')
+      + '</tr>').join('');
+    h += '</tbody></table></div>';
+    if (edit && review && review.status !== 'draft' && items.some(i => i.status === 'open' || i.status === 'sent')) {
+      const saved = store.get('rv_recipients_' + review.deal_id) || {};
+      h += '<div style="padding:14px 18px;border-top:1px solid var(--line-soft);display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
+        + '<label class="fld" style="flex:1;min-width:220px"><span>Manager email(s)</span><input type="text" id="rvTo" value="' + esc(saved.to || '') + '" placeholder="name@manager.com, …"></label>'
+        + '<label class="fld" style="flex:1;min-width:180px"><span>CC</span><input type="text" id="rvCc" value="' + esc(saved.cc || '') + '" placeholder="optional"></label>'
+        + '<button class="btn" id="rvSend">' + (review.status === 'sent' ? 'Send again' : 'Email open items to manager') + '</button></div>'
+        + '<div class="muted" style="font-size:11.5px;padding:0 18px 12px">Sent from reports@thebalboagroup.com, so replies come back to the shared inbox.</div>';
+    }
+    return h + '</div>';
+  }
+
+  function renderChecks(f) {
+    if (!f || !f.noi) return '';
+    const parts = [];
+    const vars = f.month_variances || [];
+    if (vars.length) {
+      parts.push('<h3 style="font-size:12.5px;margin:14px 18px 6px">Variances over $1K this month</h3><div style="overflow-x:auto"><table><thead><tr><th class="l">Account</th><th>Actual</th><th>Budget</th><th>Variance</th><th class="l">Manager note</th></tr></thead><tbody>'
+        + vars.map(v => '<tr><td class="l">' + esc(v.account_name) + '</td><td>' + usd(v.actual) + '</td><td>' + usd(v.budget) + '</td><td class="' + (v.variance < 0 ? 'delta-neg' : 'delta-pos') + '">' + signed(v.variance) + '</td><td class="l" style="max-width:420px">' + (v.manager_note ? esc(v.manager_note) : '<span class="pill red">No note</span>') + '</td></tr>').join('')
+        + '</tbody></table></div>');
+    }
+    const util = f.utility_recovery || [];
+    if (util.length) {
+      parts.push('<h3 style="font-size:12.5px;margin:14px 18px 6px">Utility billing recovery</h3><div style="overflow-x:auto"><table><thead><tr><th class="l">Utility</th><th>12-mo cost</th><th>12-mo billed</th><th>12-mo recovery</th><th>Last 2 months</th><th>Prior months</th><th>Budgeted</th></tr></thead><tbody>'
+        + util.map(u => '<tr><td class="l">' + esc(u.utility) + (u.flag ? ' <span class="pill red">check</span>' : '') + '</td><td>' + usd(u.t12_expense) + '</td><td>' + usd(u.t12_billed) + '</td><td>' + (u.t12_recovery_pct ?? '—') + '%</td><td>' + (u.recent_recovery_pct ?? '—') + '%</td><td>' + (u.prior_recovery_pct ?? '—') + '%</td><td>' + (u.budgeted_recovery_pct ?? '—') + '%</td></tr>').join('')
+        + '</tbody></table></div>');
+    }
+    const tr = (f.trends || []).slice(0, 10);
+    if (tr.length) {
+      parts.push('<h3 style="font-size:12.5px;margin:14px 18px 6px">Trends: last 3 months vs. the 9 before</h3><div style="overflow-x:auto"><table><thead><tr><th class="l">Account</th><th>Prior avg / mo</th><th>Last 3 avg / mo</th><th>Change</th></tr></thead><tbody>'
+        + tr.map(t => '<tr><td class="l">' + esc(t.account_name) + '</td><td>' + usd(t.prior_avg) + '</td><td>' + usd(t.recent_avg) + '</td><td class="' + (t.direction === 'worse' ? 'delta-neg' : 'delta-pos') + '">' + (t.change_pct > 0 ? '+' : '') + t.change_pct + '%</td></tr>').join('')
+        + '</tbody></table></div>');
+    }
+    const pb = f.per_bed;
+    if (pb) {
+      parts.push('<h3 style="font-size:12.5px;margin:14px 18px 6px">Trailing 12 months per bed (' + pb.bed_count + ' beds)</h3><div style="overflow-x:auto"><table><thead><tr><th class="l">Line</th><th>Per bed</th></tr></thead><tbody>'
+        + '<tr><td class="l"><b>NOI</b></td><td><b>' + usd(pb.t12_noi) + '</b></td></tr><tr><td class="l">Income</td><td>' + usd(pb.t12_income) + '</td></tr><tr><td class="l">Operating expenses (' + pb.opex_ratio_pct + '% of income)</td><td>' + usd(pb.t12_opex) + '</td></tr>'
+        + Object.entries(pb.by_section || {}).map(([k, v]) => '<tr><td class="l" style="padding-left:28px">' + esc(k) + '</td><td>' + usd(v) + '</td></tr>').join('')
+        + '</tbody></table></div>');
+    }
+    if (!parts.length) return '';
+    return '<details class="card" style="padding-bottom:8px"><summary class="card-hd" style="cursor:pointer;list-style:none"><h2>The numbers behind it</h2><span class="note">Computed from the package, not by Claude</span></summary>' + parts.join('') + '</details>';
+  }
+
+  // ---------- actions ----------
+
+  async function draft() {
+    if (!confirm('Have Claude draft the ' + monthLabel(rv.draftPeriod) + ' review? This takes about a minute.')) return;
+    busy('Claude is drafting the review…');
+    $('rvDraft').disabled = true;
+    try {
+      await api('/api/reviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deal_id: DEAL_ID, period: rv.draftPeriod || undefined }) });
+      busy('');
+      rv.period = rv.draftPeriod || rv.period;
+      await load();
+    } catch (e) { busy(''); alert('Drafting failed: ' + e.message); }
+    finally { $('rvDraft').disabled = false; }
+  }
+
+  async function checkMail() {
+    busy('Checking reports@…');
+    try {
+      const r = await api('/api/cron/mail-ingest');
+      const n = (r.results || []).length, d = (r.reviews_drafted || []).length;
+      busy(r.ok === false ? (r.reason || r.error) : (n ? n + ' email' + (n === 1 ? '' : 's') + ' processed' : 'No new emails') + (d ? ' · ' + d + ' review' + (d === 1 ? '' : 's') + ' drafted' : ''));
+      await load();
+    } catch (e) { busy(''); alert('Mailbox check failed: ' + e.message); }
+  }
+
+  async function approve() {
+    const items = [...document.querySelectorAll('[data-rv-item]')].map(el => ({
+      index: Number(el.dataset.rvItem),
+      include: el.querySelector('[data-f="include"]').checked,
+      ask: el.querySelector('[data-f="ask"]').value,
+      owner: el.querySelector('[data-f="owner"]').value.trim() || null,
+      due_date: el.querySelector('[data-f="due_date"]').value || null,
+    }));
+    busy('Approving…');
+    try {
+      await api('/api/reviews/' + rv.data.review.id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'approve', items }) });
+      busy('');
+      await load();
+    } catch (e) { busy(''); alert('Approve failed: ' + e.message); }
+  }
+
+  async function send() {
+    const split = s => s.split(/[,;\s]+/).map(x => x.trim()).filter(Boolean);
+    const to = split($('rvTo').value), cc = split($('rvCc').value);
+    if (!to.length) { alert('Enter at least one manager email.'); return; }
+    if (!confirm('Email the open action items to ' + to.join(', ') + ' from reports@thebalboagroup.com?')) return;
+    store.set('rv_recipients_' + rv.data.review.deal_id, { to: $('rvTo').value, cc: $('rvCc').value });
+    busy('Sending…');
+    try {
+      const r = await api('/api/reviews/' + rv.data.review.id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', to, cc }) });
+      busy(r.sent + ' item' + (r.sent === 1 ? '' : 's') + ' sent');
+      await load();
+    } catch (e) { busy(''); alert('Send failed: ' + e.message); }
+  }
+
+  async function saveItem(row, field, value) {
+    busy('Saving…');
+    try {
+      const updated = await api('/api/action-items/' + row.dataset.rvAi, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [field]: value }) });
+      const i = rv.data.action_items.findIndex(x => x.id === updated.id);
+      if (i >= 0) rv.data.action_items[i] = updated;
+      busy('Saved');
+      if (field === 'status') render();
+      setTimeout(() => { if ($('rvBusy').textContent === 'Saved') busy(''); }, 1500);
+    } catch (e) { busy(''); alert('Save failed: ' + e.message); }
+  }
+
+  // ---------- wiring ----------
+
+  $('rvDraft').addEventListener('click', draft);
+  $('rvCheckMail').addEventListener('click', checkMail);
+  $('rvPeriod').addEventListener('change', e => { rv.period = e.target.value; load(); });
+  $('rvBody').addEventListener('click', e => {
+    if (e.target.id === 'rvApprove') approve();
+    if (e.target.id === 'rvSend') send();
+  });
+  $('rvBody').addEventListener('change', e => {
+    const row = e.target.closest('[data-rv-ai]');
+    if (row && e.target.dataset.f) saveItem(row, e.target.dataset.f, e.target.value);
+  });
+
+  const tabBtn = document.querySelector('.tab[data-tab="review"]');
+  if (tabBtn) tabBtn.addEventListener('click', () => { rv.period = null; load(); });
+
+  // Reload when the deal changes while this tab is open.
+  if (typeof switchDeal === 'function') {
+    const original = switchDeal;
+    switchDeal = async function (deal) {
+      const result = await original.apply(this, arguments);
+      rv.period = null;
+      if (document.getElementById('panel-review').classList.contains('active')) load();
+      return result;
+    };
+  }
 })();
 </script>
 </body>

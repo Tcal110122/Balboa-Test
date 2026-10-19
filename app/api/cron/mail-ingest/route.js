@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import * as mail from '@/lib/packages/graph'
 import { adminClient, expandAttachments, ingestPackage, isAllowedSender, loadAliases } from '@/lib/packages/intake'
+import { generateReview, packagesNeedingReview } from '@/lib/reviews/generate'
 
 export const maxDuration = 300
 
@@ -82,6 +83,7 @@ async function processMessage(db, aliases, m) {
 }
 
 export async function GET(request) {
+  const started = Date.now()
   if (!(await authorized(request))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!mail.isConfigured()) {
     return NextResponse.json({
@@ -118,5 +120,22 @@ export async function GET(request) {
       results.push({ subject: m.subject, status: 'failed', error: e.message })
     }
   }
-  return NextResponse.json({ ok: true, checked: messages.length, results })
+  // Draft reviews for newly parsed packages while there's time left in this run
+  // (each draft takes a minute or so). Anything left over is picked up next run.
+  const drafted = []
+  if (process.env.ANTHROPIC_API_KEY) {
+    for (let i = 0; i < 3 && Date.now() - started < 150_000; i++) {
+      const [next] = await packagesNeedingReview(db, 1)
+      if (!next) break
+      try {
+        const review = await generateReview(db, next.deal_id, next.period)
+        drafted.push({ deal_id: next.deal_id, period: next.period, review_id: review.id })
+      } catch (e) {
+        drafted.push({ deal_id: next.deal_id, period: next.period, error: e.message })
+        break
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: true, checked: messages.length, results, reviews_drafted: drafted })
 }

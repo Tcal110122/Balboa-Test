@@ -31718,9 +31718,13 @@ function uwShowTab(tab) {
     $('rvPackages').innerHTML = renderPackages(d.packages);
     if (!d.review) {
       const parsed = d.packages.find(p => p.status === 'parsed' && p.period === rv.period) || d.packages.find(p => p.status === 'parsed');
+      const unread = d.packages.find(p => p.status !== 'parsed');
       $('rvBody').innerHTML = '<div class="empty">' + (parsed
         ? 'The ' + monthLabel(parsed.period) + ' package is in. ' + (edit ? 'Click <b>Draft review</b> to have Claude write the review.' : 'The review hasn\'t been drafted yet.')
-        : 'No package has arrived for this property yet. Managers (or anyone at Balboa) can email packages to <b>reports@thebalboagroup.com</b>.') + '</div>'
+        : unread
+          ? 'The ' + (monthLabel(unread.period) || 'latest') + ' package arrived and its files are stored (see <b>Files</b> above), but the portal can\'t read this manager\'s format yet, so there\'s no review.'
+            + ((unread.summary && unread.summary.warnings || []).length ? '<div class="muted" style="margin-top:8px;font-size:12px">' + esc(unread.summary.warnings.join(' · ')) + '</div>' : '')
+          : 'No package has arrived for this property yet. Managers (or anyone at Balboa) can email packages to <b>reports@thebalboagroup.com</b>.') + '</div>'
         + renderTracker(d.action_items, edit);
       return;
     }

@@ -8,5 +8,16 @@
       "path": "/api/cron/mail-ingest",
       "schedule": "0 14 * * *"
     }
+  ],
+  "headers": [
+    {
+      "source": "/tool.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    }
   ]
 }

@@ -31740,7 +31740,8 @@ function uwShowTab(tab) {
         + '<span class="pill ' + (PILL[p.status] || 'amber') + '">' + esc(p.status.replace('_', ' ')) + '</span>'
         + '<span>' + esc(monthLabel(p.period) || 'Unknown month') + '</span>'
         + '<span class="muted">' + (s.files || 0) + ' files · received ' + new Date(p.created_at).toLocaleDateString() + '</span>'
-        + (s.files ? ' <a href="#" data-rv-files="' + p.id + '" style="color:var(--accent);font-weight:600">Files</a>' : '') + '</span>';
+        + (s.files ? ' <a href="#" data-rv-files="' + p.id + '" style="color:var(--accent);font-weight:600">Files</a>' : '')
+        + (p.status === 'needs_attention' && rv.data.can_edit ? ' <a href="#" data-rv-reparse="' + p.id + '" style="color:var(--accent);font-weight:600" title="Read the stored files again">Re-read</a>' : '') + '</span>';
     }).join('');
     return '<div style="font-size:12.5px;margin-bottom:16px">' + rows + '<div id="rvFiles"></div></div>';
   }
@@ -31763,7 +31764,7 @@ function uwShowTab(tab) {
     h += '<div class="tiles">'
       + tile('NOI · month', usd(m.actual), 'Budget ' + usd(m.budget) + ' · ' + signed((m.actual || 0) - (m.budget || 0)), m.actual < m.budget)
       + tile('NOI · year to date', usd(y.actual), 'Budget ' + usd(y.budget) + ' · opex ' + signed(y.opex_variance) + ' vs budget', y.actual < y.budget)
-      + (occ ? tile('Occupancy', occ.occupancy_pct + '%', occ.vacant + ' of ' + occ.beds + ' beds vacant', occ.occupancy_pct < 95) : tile('Unexplained variances', (f.unexplained_variances || []).length, 'of ' + ((f.note_coverage || {}).material || 0) + ' over $1K', (f.unexplained_variances || []).length > 3))
+      + (occ ? tile('Occupancy', occ.occupancy_pct + '%', occ.vacant + ' of ' + occ.beds + ' ' + (((f.per_bed || {}).basis || 'bed') === 'unit' ? 'units' : 'beds') + ' vacant', occ.occupancy_pct < 95) : tile('Unexplained variances', (f.unexplained_variances || []).length, 'of ' + ((f.note_coverage || {}).material || 0) + ' over $1K', (f.unexplained_variances || []).length > 3))
       + (util.length ? tile(esc(util[0].utility) + ' recovery', (util[0].recent_recovery_pct ?? '—') + '%', 'Recent months · was ' + (util[0].prior_recovery_pct ?? '—') + '%', true)
         : tile('Variance notes', ((f.note_coverage || {}).explained || 0) + ' / ' + ((f.note_coverage || {}).material || 0), 'material variances explained', false))
       + '</div>';
@@ -31860,7 +31861,8 @@ function uwShowTab(tab) {
     }
     const pb = f.per_bed;
     if (pb) {
-      parts.push('<h3 style="font-size:12.5px;margin:14px 18px 6px">Trailing 12 months per bed (' + pb.bed_count + ' beds)</h3><div style="overflow-x:auto"><table><thead><tr><th class="l">Line</th><th>Per bed</th></tr></thead><tbody>'
+      const per = pb.basis === 'unit' ? 'unit' : 'bed';
+      parts.push('<h3 style="font-size:12.5px;margin:14px 18px 6px">Trailing 12 months per ' + per + ' (' + pb.bed_count + ' ' + per + 's)</h3><div style="overflow-x:auto"><table><thead><tr><th class="l">Line</th><th>Per ' + per + '</th></tr></thead><tbody>'
         + '<tr><td class="l"><b>NOI</b></td><td><b>' + usd(pb.t12_noi) + '</b></td></tr><tr><td class="l">Income</td><td>' + usd(pb.t12_income) + '</td></tr><tr><td class="l">Operating expenses (' + pb.opex_ratio_pct + '% of income)</td><td>' + usd(pb.t12_opex) + '</td></tr>'
         + Object.entries(pb.by_section || {}).map(([k, v]) => '<tr><td class="l" style="padding-left:28px">' + esc(k) + '</td><td>' + usd(v) + '</td></tr>').join('')
         + '</tbody></table></div>');
@@ -31940,6 +31942,16 @@ function uwShowTab(tab) {
     } catch (e) { box.innerHTML = '<div class="hint warn" style="margin-top:8px"><b>Couldn\'t load files.</b> ' + esc(e.message) + '</div>'; }
   }
 
+  async function reparse(pkgId) {
+    busy('Reading the package…');
+    try {
+      const r = await api('/api/packages/' + pkgId + '/reparse', { method: 'POST' });
+      busy(r.status === 'parsed' ? 'Package read' : 'Still can\'t read it: ' + ((r.summary && r.summary.warnings) || []).join(' · '));
+      rv.period = null;
+      await load();
+    } catch (e) { busy(''); alert('Re-read failed: ' + e.message); }
+  }
+
   // Print-ready copy of the review; the browser's print dialog saves it as PDF.
   function printReview() {
     const d = rv.data, r = d.review; if (!r) return;
@@ -31963,7 +31975,7 @@ function uwShowTab(tab) {
       + '<div class="sub">' + esc(r.status === 'draft' ? 'Draft' : r.status === 'sent' ? 'Sent to manager ' + (r.sent_at ? new Date(r.sent_at).toLocaleDateString() : '') : 'Approved') + ' · Balboa Real Estate Partners</div>'
       + '<div class="head">' + esc(c.headline) + '</div><div>' + esc(c.summary) + '</div>'
       + '<div class="kpis"><div>NOI · month<b>' + usd(m.actual) + '</b>budget ' + usd(m.budget) + '</div><div>NOI · YTD<b>' + usd(y.actual) + '</b>budget ' + usd(y.budget) + '</div>'
-      + (f.occupancy ? '<div>Occupancy<b>' + f.occupancy.occupancy_pct + '%</b>' + f.occupancy.vacant + ' of ' + f.occupancy.beds + ' vacant</div>' : '') + '</div>'
+      + (f.occupancy ? '<div>Occupancy<b>' + f.occupancy.occupancy_pct + '%</b>' + f.occupancy.vacant + ' of ' + f.occupancy.beds + ' ' + (((f.per_bed || {}).basis || 'bed') === 'unit' ? 'units' : 'beds') + ' vacant</div>' : '') + '</div>'
       + '<h2>Action items</h2>' + (items.length ? items.map((i, n) => '<div class="item"><b>' + (n + 1) + '. ' + esc(i.title) + '</b> <span class="meta">' + esc([i.status, i.at_stake, i.owner && 'Owner: ' + i.owner, i.due && 'Due ' + i.due, i.opened && i.opened !== r.period && 'Opened ' + i.opened.slice(0, 7)].filter(Boolean).join(' · ')) + '</span>'
         + ((i.finding || finding[i.title]) ? '<div>' + esc(i.finding || finding[i.title]) + '</div>' : '') + '<div><i>Ask:</i> ' + esc(i.ask) + '</div>' + (i.response ? '<div><i>Manager response:</i> ' + esc(i.response) + '</div>' : '') + '</div>').join('') : '<div>None.</div>')
       + ((c.internal_actions || []).length ? '<h2>For the Balboa team</h2>' + c.internal_actions.map(a => '<div class="item"><b>' + esc(a.title) + '.</b> ' + esc(a.detail) + '</div>').join('') : '')
@@ -31996,6 +32008,8 @@ function uwShowTab(tab) {
   $('rvPackages').addEventListener('click', e => {
     const a = e.target.closest('[data-rv-files]');
     if (a) { e.preventDefault(); showFiles(a.dataset.rvFiles); }
+    const rp = e.target.closest('[data-rv-reparse]');
+    if (rp) { e.preventDefault(); reparse(rp.dataset.rvReparse); }
   });
   $('rvPeriod').addEventListener('change', e => { rv.period = e.target.value; load(); });
   $('rvBody').addEventListener('click', e => {

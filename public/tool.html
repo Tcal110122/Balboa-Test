@@ -1434,6 +1434,7 @@
       <select id="rvPeriod" title="Month" style="display:none"></select>
       <div class="grow"></div>
       <span id="rvBusy" class="muted" style="font-size:12px"></span>
+      <button class="btn subtle sm" id="rvPdf" style="display:none" title="Open a print-ready copy you can save as PDF">Save as PDF</button>
       <button class="btn subtle sm" id="rvCheckMail" style="display:none" title="Check reports@ for new packages now">Check mailbox</button>
       <button class="btn ghost sm" id="rvDraft" style="display:none">Draft review</button>
     </div>
@@ -31687,7 +31688,7 @@ function uwShowTab(tab) {
     const q = '/api/reviews?deal_id=' + encodeURIComponent(DEAL_ID) + (rv.period ? '&period=' + rv.period : '');
     try {
       rv.data = await api(q);
-      rv.period = rv.data.review ? rv.data.review.period : rv.period;
+      rv.period = rv.data.period || null;
       render();
     } catch (e) {
       $('rvBody').innerHTML = '<div class="hint warn"><b>Couldn\'t load the review.</b> ' + esc(e.message) + '</div>';
@@ -31703,17 +31704,20 @@ function uwShowTab(tab) {
     // An approved/sent month is never redrafted from here.
     const latestParsed = d.packages.filter(p => p.status === 'parsed').map(p => p.period).sort().pop() || null;
     const r0 = d.review;
-    rv.draftPeriod = !r0 ? latestParsed : r0.status === 'draft' ? r0.period : (latestParsed && latestParsed > r0.period ? latestParsed : null);
+    const parsedMonths = d.packages.filter(p => p.status === 'parsed').map(p => p.period);
+    rv.draftPeriod = !r0 ? (rv.period && parsedMonths.includes(rv.period) ? rv.period : latestParsed)
+      : r0.status === 'draft' ? r0.period : null;
     $('rvDraft').style.display = edit && rv.draftPeriod ? '' : 'none';
     $('rvDraft').textContent = r0 && r0.status === 'draft' && rv.draftPeriod === r0.period ? 'Redraft' : 'Draft ' + monthLabel(rv.draftPeriod) + ' review';
 
     const sel = $('rvPeriod');
-    sel.style.display = d.periods.length > 1 ? '' : 'none';
+    sel.style.display = d.periods.length ? '' : 'none';
     sel.innerHTML = d.periods.map(p => '<option value="' + p + '"' + (p === rv.period ? ' selected' : '') + '>' + monthLabel(p) + '</option>').join('');
+    $('rvPdf').style.display = d.review ? '' : 'none';
 
     $('rvPackages').innerHTML = renderPackages(d.packages);
     if (!d.review) {
-      const parsed = d.packages.find(p => p.status === 'parsed');
+      const parsed = d.packages.find(p => p.status === 'parsed' && p.period === rv.period) || d.packages.find(p => p.status === 'parsed');
       $('rvBody').innerHTML = '<div class="empty">' + (parsed
         ? 'The ' + monthLabel(parsed.period) + ' package is in. ' + (edit ? 'Click <b>Draft review</b> to have Claude write the review.' : 'The review hasn\'t been drafted yet.')
         : 'No package has arrived for this property yet. Managers (or anyone at Balboa) can email packages to <b>reports@thebalboagroup.com</b>.') + '</div>'
@@ -31731,9 +31735,10 @@ function uwShowTab(tab) {
       return '<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"' + warn + '>'
         + '<span class="pill ' + (PILL[p.status] || 'amber') + '">' + esc(p.status.replace('_', ' ')) + '</span>'
         + '<span>' + esc(monthLabel(p.period) || 'Unknown month') + '</span>'
-        + '<span class="muted">' + (s.files || 0) + ' files · received ' + new Date(p.created_at).toLocaleDateString() + '</span></span>';
+        + '<span class="muted">' + (s.files || 0) + ' files · received ' + new Date(p.created_at).toLocaleDateString() + '</span>'
+        + (s.files ? ' <a href="#" data-rv-files="' + p.id + '" style="color:var(--accent);font-weight:600">Files</a>' : '') + '</span>';
     }).join('');
-    return '<div style="font-size:12.5px;margin-bottom:16px">' + rows + '</div>';
+    return '<div style="font-size:12.5px;margin-bottom:16px">' + rows + '<div id="rvFiles"></div></div>';
   }
 
   function tile(k, v, x, flag) {
@@ -31915,6 +31920,58 @@ function uwShowTab(tab) {
     } catch (e) { busy(''); alert('Send failed: ' + e.message); }
   }
 
+  async function showFiles(pkgId) {
+    const box = $('rvFiles');
+    if (box.dataset.pkg === pkgId) { box.innerHTML = ''; box.dataset.pkg = ''; return; }
+    box.dataset.pkg = pkgId;
+    box.innerHTML = '<div class="muted" style="margin-top:8px">Loading files…</div>';
+    try {
+      const files = await api('/api/packages/' + pkgId + '/files');
+      const size = b => b == null ? '' : b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+      box.innerHTML = '<div class="card" style="margin:10px 0 0"><div class="card-hd"><h2>Package files</h2><span class="note">Links work for 10 minutes; reopen to refresh</span></div><div style="padding:6px 18px 10px">'
+        + files.map(f => '<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--line-soft)">'
+          + (f.url ? '<a href="' + esc(f.url) + '" target="_blank" rel="noopener" style="color:var(--accent);word-break:break-all">' + esc(f.name) + '</a>' : '<span>' + esc(f.name) + '</span>')
+          + '<span class="muted" style="white-space:nowrap">' + size(f.size_bytes) + '</span></div>').join('')
+        + '</div></div>';
+    } catch (e) { box.innerHTML = '<div class="hint warn" style="margin-top:8px"><b>Couldn\'t load files.</b> ' + esc(e.message) + '</div>'; }
+  }
+
+  // Print-ready copy of the review; the browser's print dialog saves it as PDF.
+  function printReview() {
+    const d = rv.data, r = d.review; if (!r) return;
+    const c = r.content || {}, f = r.flags || {}, m = (f.noi || {}).month || {}, y = (f.noi || {}).ytd || {};
+    const deal = (typeof DEALS !== 'undefined' ? DEALS : []).find(x => x.id === r.deal_id) || {};
+    const items = r.status === 'draft'
+      ? (c.action_items || []).map(i => ({ title: i.title, finding: i.finding, ask: i.ask, at_stake: i.at_stake, status: 'Proposed', owner: '', due: '' }))
+      : d.action_items.filter(i => i.opened_period === r.period || i.status !== 'resolved')
+        .map(i => ({ title: i.title, ask: i.ask, at_stake: i.at_stake, status: STATUS[i.status], owner: i.owner || '', due: i.due_date || '', response: i.manager_response || '', opened: i.opened_period }));
+    const finding = Object.fromEntries((c.action_items || []).map(i => [i.title, i.finding]));
+    const vars = (f.month_variances || []);
+    const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc((deal.name || 'Property') + ' — ' + monthLabel(r.period) + ' review') + '</title><style>'
+      + 'body{font:13px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif;color:#1a1d21;margin:32px;max-width:900px}'
+      + 'h1{font-size:20px;margin:0 0 2px}h2{font-size:14px;margin:22px 0 8px;border-bottom:1px solid #d9d6cd;padding-bottom:4px}'
+      + '.sub{color:#8b9099;font-size:12px;margin-bottom:14px}.head{font-weight:700;font-size:14px;margin:10px 0 6px}'
+      + '.kpis{display:flex;gap:24px;margin:12px 0}.kpis div{font-size:11px;color:#8b9099;text-transform:uppercase;letter-spacing:.06em}.kpis b{display:block;font-size:17px;color:#1a1d21;text-transform:none;letter-spacing:0}'
+      + '.item{margin:0 0 12px;page-break-inside:avoid}.meta{color:#8b9099;font-size:11.5px}'
+      + 'table{width:100%;border-collapse:collapse;font-size:11.5px}th,td{text-align:left;padding:4px 6px;border-bottom:1px solid #e8e6df;vertical-align:top}td.n{text-align:right;white-space:nowrap}'
+      + '@media print{body{margin:0}}</style></head><body>'
+      + '<h1>' + esc(deal.name || 'Property') + ' — ' + esc(monthLabel(r.period)) + ' asset management review</h1>'
+      + '<div class="sub">' + esc(r.status === 'draft' ? 'Draft' : r.status === 'sent' ? 'Sent to manager ' + (r.sent_at ? new Date(r.sent_at).toLocaleDateString() : '') : 'Approved') + ' · Balboa Real Estate Partners</div>'
+      + '<div class="head">' + esc(c.headline) + '</div><div>' + esc(c.summary) + '</div>'
+      + '<div class="kpis"><div>NOI · month<b>' + usd(m.actual) + '</b>budget ' + usd(m.budget) + '</div><div>NOI · YTD<b>' + usd(y.actual) + '</b>budget ' + usd(y.budget) + '</div>'
+      + (f.occupancy ? '<div>Occupancy<b>' + f.occupancy.occupancy_pct + '%</b>' + f.occupancy.vacant + ' of ' + f.occupancy.beds + ' vacant</div>' : '') + '</div>'
+      + '<h2>Action items</h2>' + (items.length ? items.map((i, n) => '<div class="item"><b>' + (n + 1) + '. ' + esc(i.title) + '</b> <span class="meta">' + esc([i.status, i.at_stake, i.owner && 'Owner: ' + i.owner, i.due && 'Due ' + i.due, i.opened && i.opened !== r.period && 'Opened ' + i.opened.slice(0, 7)].filter(Boolean).join(' · ')) + '</span>'
+        + ((i.finding || finding[i.title]) ? '<div>' + esc(i.finding || finding[i.title]) + '</div>' : '') + '<div><i>Ask:</i> ' + esc(i.ask) + '</div>' + (i.response ? '<div><i>Manager response:</i> ' + esc(i.response) + '</div>' : '') + '</div>').join('') : '<div>None.</div>')
+      + ((c.internal_actions || []).length ? '<h2>For the Balboa team</h2>' + c.internal_actions.map(a => '<div class="item"><b>' + esc(a.title) + '.</b> ' + esc(a.detail) + '</div>').join('') : '')
+      + (c.manager_assessment ? '<h2>Manager reporting</h2><div>' + esc(c.manager_assessment) + '</div>' : '')
+      + (vars.length ? '<h2>Variances over $1K this month</h2><table><tr><th>Account</th><th class="n">Actual</th><th class="n">Budget</th><th class="n">Variance</th><th>Manager note</th></tr>'
+        + vars.map(v => '<tr><td>' + esc(v.account_name) + '</td><td class="n">' + usd(v.actual) + '</td><td class="n">' + usd(v.budget) + '</td><td class="n">' + signed(v.variance) + '</td><td>' + esc(v.manager_note || '— no note —') + '</td></tr>').join('') + '</table>' : '')
+      + '<script>window.onload=function(){window.print()}<\/script></body></html>';
+    const w = window.open('', '_blank');
+    if (!w) { alert('Allow pop-ups for this site to save the review as PDF.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+
   async function saveItem(row, field, value) {
     busy('Saving…');
     try {
@@ -31931,6 +31988,11 @@ function uwShowTab(tab) {
 
   $('rvDraft').addEventListener('click', draft);
   $('rvCheckMail').addEventListener('click', checkMail);
+  $('rvPdf').addEventListener('click', printReview);
+  $('rvPackages').addEventListener('click', e => {
+    const a = e.target.closest('[data-rv-files]');
+    if (a) { e.preventDefault(); showFiles(a.dataset.rvFiles); }
+  });
   $('rvPeriod').addEventListener('change', e => { rv.period = e.target.value; load(); });
   $('rvBody').addEventListener('click', e => {
     if (e.target.id === 'rvApprove') approve();

@@ -25,7 +25,10 @@ export async function GET(request) {
     db.from('action_items').select('*').eq('deal_id', dealId).order('opened_period', { ascending: false }).order('created_at'),
   ])
 
-  const period = params.get('period') || reviews?.[0]?.period || null
+  // Default to the newest month that has either a review or a parsed package.
+  const newestPackage = (packages || []).filter(p => p.status === 'parsed' && p.period).map(p => p.period).sort().pop() || null
+  const newestReview = reviews?.[0]?.period || null
+  const period = params.get('period') || [newestPackage, newestReview].filter(Boolean).sort().pop() || null
   let review = null
   if (period) {
     // Prefer the sent/approved version of a month over a newer draft.
@@ -40,7 +43,9 @@ export async function GET(request) {
   return NextResponse.json({
     can_edit: auth.isAllDeals,
     packages: packages || [],
-    periods: [...new Set((reviews || []).map(r => r.period))],
+    // Months with a review or a parsed package, newest first.
+    periods: [...new Set([...(reviews || []).map(r => r.period), ...(packages || []).filter(p => p.status === 'parsed' && p.period).map(p => p.period)])].sort().reverse(),
+    period,
     review,
     action_items: items || [],
   })
